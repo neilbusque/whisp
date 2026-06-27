@@ -18,11 +18,9 @@ final class SnippetsWindowController {
             win.isReleasedWhenClosed = false
             window = win
         }
-        // The app runs as .accessory (LSUIElement) so the menu-bar HUD stays
-        // non-activating. To present a real, focusable window we flip to
-        // .regular while it's open; the HUD remains a borderless floating panel
-        // unaffected by activation policy.
-        NSApp.setActivationPolicy(.regular)
+        // Stay .accessory (LSUIElement) the whole time so Whisp never shows a
+        // Dock icon. An accessory app can still present a focusable key window;
+        // we just activate and bring it to front, no policy change.
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

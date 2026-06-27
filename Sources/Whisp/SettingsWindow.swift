@@ -17,9 +17,8 @@ final class SettingsWindowController {
             win.isReleasedWhenClosed = false
             window = win
         }
-        // Flip to .regular so the settings window is focusable; the borderless
-        // HUD floating panel is unaffected and stays non-activating.
-        NSApp.setActivationPolicy(.regular)
+        // Stay .accessory (LSUIElement) so Whisp never shows a Dock icon. An
+        // accessory app can still present a focusable key window; just activate.
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }
@@ -29,6 +28,7 @@ private struct SettingsView: View {
     let path: String
     @State private var config = WhispConfig.defaults
     @State private var saved = false
+    @State private var launchAtLogin = LoginItem.isEnabled
 
     // Known on-device models, plus whatever is currently configured.
     private var modelOptions: [(id: String, label: String)] {
@@ -87,6 +87,19 @@ private struct SettingsView: View {
                     Text("Dictation")
                 } footer: {
                     Text("Hold Fn, speak, release. The key is fixed in this version.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
+                Section {
+                    Toggle("Launch at login", isOn: $launchAtLogin)
+                        .onChange(of: launchAtLogin) { newValue in
+                            LoginItem.setEnabled(newValue)
+                            launchAtLogin = LoginItem.isEnabled
+                        }
+                } header: {
+                    Text("Startup")
+                } footer: {
+                    Text("Opens Whisp automatically when you log in. Lives in System Settings → General → Login Items.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
