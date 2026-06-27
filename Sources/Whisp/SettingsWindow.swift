@@ -33,7 +33,7 @@ private struct SettingsView: View {
     var body: some View {
         Form {
             SecureField("DeepSeek API key", text: $config.deepseekKey)
-            TextField("Hotkey", text: $config.hotkey)
+            LabeledContent("Hotkey", value: "Fn (fixed in v1)")
             TextField("Whisper model", text: $config.whisperModel)
             HStack {
                 Button("Save") { save() }

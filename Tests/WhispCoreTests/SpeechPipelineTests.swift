@@ -76,6 +76,27 @@ import Foundation
         #expect(inserter.inserted[0].lowercased().contains("um") == false)
     }
 
+    @Test func aiSnippetOfflineFallbackUsesCleanedRemainderNotInstruction() async {
+        // When DeepSeek is unreachable the fallback must be offlineClean(remainder),
+        // never the raw instruction string stored in snippet.content.
+        let instruction = "Write a short friendly cold email to a prospect."
+        let snip = Snippet(keyword: "cold email", mode: .ai, content: instruction)
+        let cleaner = FakeCleaner(reply: "X")
+        cleaner.shouldThrow = true
+        let inserter = FakeInserter()
+        let pipe = SpeechPipeline(
+            snippets: SnippetStore(snippets: [snip]),
+            transcriber: FakeTranscriber("cold email to a dentist"),
+            cleaner: cleaner, inserter: inserter, onStatus: { _ in })
+        await pipe.process(samples: [0.0])
+        // Must have inserted something (offline-cleaned remainder)
+        #expect(inserter.inserted.count == 1)
+        // Must NOT have pasted the raw instruction
+        #expect(inserter.inserted[0] != instruction)
+        // The remainder "to a dentist" after offlineClean should be present (or empty), not the instruction
+        #expect(!inserter.inserted[0].contains("Write a short friendly cold email"))
+    }
+
     @Test func emptyTranscriptInsertsNothingAndReportsError() async {
         let inserter = FakeInserter()
         var statuses: [PipelineStatus] = []

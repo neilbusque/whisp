@@ -52,7 +52,7 @@ public final class SpeechPipeline: @unchecked Sendable {
                     output = try await cleanOrFallback(
                         TranscriptCleaner.aiTemplatePrompt(template: m.snippet.content,
                                                            dictation: m.remainder),
-                        fallback: m.remainder.isEmpty ? m.snippet.content : m.remainder)
+                        fallback: TranscriptCleaner.offlineClean(m.remainder))
                 }
             } else {
                 onStatus(.polishing)

@@ -12,7 +12,6 @@
   <key>LSUIElement</key><true/>
   <key>NSMicrophoneUsageDescription</key>
   <string>Whisp records your voice locally to transcribe it into text.</string>
-  <key>NSAppleEventsUsageDescription</key>
-  <string>Whisp pastes transcribed text into the focused app.</string>
+  <!-- Paste is performed via CGEvent (Accessibility), granted in System Settings; no Info.plist key applies. -->
 </dict>
 </plist>
