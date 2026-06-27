@@ -1,0 +1,7 @@
+Whisp.app/
+.build/
+.DS_Store
+config.json
+snippets.json
+*.bin
+models/
