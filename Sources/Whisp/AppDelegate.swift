@@ -13,10 +13,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var recording = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Diag.log("=== launch ===")
         do {
             try Paths.ensureSeeded()
             config = try Paths.loadConfig()
         } catch {
+            Diag.log("seed/config error: \(error)")
             NSLog("Whisp seed/config error: \(error)")
         }
 
@@ -63,7 +65,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self?.updateStatusTitle(status)
                     }
                 })
+            Diag.log("pipeline OK (model=\(config.whisperModel))")
         } catch {
+            Diag.log("pipeline FAIL: \(error)")
             NSLog("Whisp pipeline init failed: \(error)")
             setStatusTitle("Whisp — model error (open Settings)")
         }
@@ -72,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Recording flow
 
     private func startRecording() {
+        Diag.log("startRecording called (recording=\(recording), pipeline=\(pipeline != nil))")
         guard !recording, pipeline != nil else { return }
         recording = true
         do {
@@ -87,9 +92,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopAndProcess() {
+        Diag.log("stopAndProcess called (recording=\(recording))")
         guard recording else { return }
         recording = false
         let samples = recorder.stop()
+        Diag.log("captured \(samples.count) samples")
         guard let pipeline else { return }
         Task { await pipeline.process(samples: samples) }
     }
