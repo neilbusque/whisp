@@ -78,9 +78,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try recorder.start()
             hud.show(.listening)
             setStatusTitle("Whisp — listening")
+            updateMenuIcon("mic.fill")
         } catch {
             recording = false
             hud.show(.error("Mic error"))
+            updateMenuIcon("exclamationmark.triangle")
         }
     }
 
@@ -96,7 +98,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupMenuBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "🎙"
+        statusItem.button?.title = ""
+        updateMenuIcon("waveform")
         let menu = NSMenu()
         statusMenuItem = NSMenuItem(title: "Whisp — idle", action: nil, keyEquivalent: "")
         menu.addItem(statusMenuItem)
@@ -110,17 +113,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusTitle(_ status: PipelineStatus) {
         switch status {
-        case .idle:         setStatusTitle("Whisp — idle")
-        case .listening:    setStatusTitle("Whisp — listening")
-        case .transcribing: setStatusTitle("Whisp — transcribing")
-        case .polishing:    setStatusTitle("Whisp — polishing")
-        case .done:         setStatusTitle("Whisp — idle")
-        case .error(let m): setStatusTitle("Whisp — \(m)")
+        case .idle:         setStatusTitle("Whisp — idle");          updateMenuIcon("waveform")
+        case .listening:    setStatusTitle("Whisp — listening");     updateMenuIcon("mic.fill")
+        case .transcribing: setStatusTitle("Whisp — transcribing");  updateMenuIcon("waveform")
+        case .polishing:    setStatusTitle("Whisp — polishing");     updateMenuIcon("sparkles")
+        case .done:         setStatusTitle("Whisp — idle");          updateMenuIcon("waveform")
+        case .error(let m): setStatusTitle("Whisp — \(m)");          updateMenuIcon("exclamationmark.triangle")
         }
     }
 
     private func setStatusTitle(_ s: String) {
         statusMenuItem.title = s
+    }
+
+    /// Template SF Symbol so the menu-bar icon adapts to light/dark automatically.
+    private func updateMenuIcon(_ symbol: String) {
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        let img = NSImage(systemSymbolName: symbol, accessibilityDescription: "Whisp")?
+            .withSymbolConfiguration(config)
+        img?.isTemplate = true
+        statusItem.button?.image = img
     }
 
     @objc private func openSnippets() {
