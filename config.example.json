@@ -1,0 +1,6 @@
+{
+  "deepseekKey": "sk-REPLACE-ME",
+  "hotkey": "fn",
+  "whisperModel": "ggml-base.en",
+  "snippetsPath": "~/.whisp/snippets.json"
+}
