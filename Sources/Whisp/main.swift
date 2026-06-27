@@ -1,4 +1,5 @@
 import AppKit
+import WhispCore
 
 // ── TEMPORARY SPIKE: paste-at-cursor + clipboard restore ────────────────────
 // Remove once live verification is confirmed.
@@ -45,6 +46,23 @@ if CommandLine.arguments.contains("--spike-record") {
         print("TRANSCRIPT: \(text)")
     } catch {
         print("SPIKE ERROR: \(error)")
+    }
+    exit(0)
+}
+// ── END TEMPORARY SPIKE ──────────────────────────────────────────────────────
+
+// ── TEMPORARY SPIKE: DeepSeek transcript polish round-trip ──────────────────
+// Remove once live verification is confirmed.
+// Usage: DEEPSEEK_KEY=sk-... .build/release/Whisp --spike-clean
+//        Expected output: CLEANED: I went to the store today.
+if CommandLine.arguments.contains("--spike-clean") {
+    let key = ProcessInfo.processInfo.environment["DEEPSEEK_KEY"] ?? ""
+    let msgs = TranscriptCleaner.polishPrompt(raw: "um so like i went to the uh store today")
+    do {
+        let out = try await DeepSeekCleaner(apiKey: key).complete(msgs)
+        print("CLEANED: \(out)")
+    } catch {
+        print("ERR: \(error)")
     }
     exit(0)
 }
