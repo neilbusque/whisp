@@ -6,6 +6,11 @@ let package = Package(
     platforms: [.macOS(.v13)],
     targets: [
         .target(name: "WhispCore"),
+        .executableTarget(
+            name: "Whisp",
+            dependencies: ["WhispCore"],
+            path: "Sources/Whisp"
+        ),
         .testTarget(name: "WhispCoreTests", dependencies: ["WhispCore"]),
     ]
 )
