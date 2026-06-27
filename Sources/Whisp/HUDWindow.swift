@@ -1,19 +1,22 @@
 import AppKit
 import WhispCore
 
-/// A small floating overlay that shows what Whisp is doing. It never takes
-/// focus (so you keep typing into your own app) and is built on real macOS
-/// vibrancy with the live waveform as its centerpiece.
+/// A small, premium glass pill that shows what Whisp is doing. It never takes
+/// focus (so you keep typing into your own app). Built on real macOS vibrancy
+/// with a translucent frosted look and the live waveform inline on the right.
 @MainActor
 final class HUDWindow {
     private let window: NSWindow
     private let glyph = NSImageView()
     private let label = NSTextField(labelWithString: "")
     private let wave = WaveformView(frame: .zero)
+    private let sheen = CAGradientLayer()
     private var hideWork: Task<Void, Never>?
 
-    private static let cardWidth: CGFloat = 280
-    private static let cardHeight: CGFloat = 96
+    private static let cardWidth: CGFloat = 248
+    private static let cardHeight: CGFloat = 46
+    private static let radius: CGFloat = 23
+    private static let shownAlpha: CGFloat = 0.9   // reduced opacity / translucent glass
 
     init() {
         window = NSWindow(
@@ -26,51 +29,67 @@ final class HUDWindow {
         window.ignoresMouseEvents = true
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        // Real blur instead of a flat card, masked to a rounded "glass" tile.
+        // Frosted glass base.
         let blur = NSVisualEffectView()
         blur.material = .hudWindow
         blur.blendingMode = .behindWindow
         blur.state = .active
         blur.appearance = NSAppearance(named: .vibrantDark)
         blur.wantsLayer = true
-        blur.layer?.cornerRadius = 18
+        blur.layer?.cornerRadius = Self.radius
         blur.layer?.cornerCurve = .continuous
         blur.layer?.masksToBounds = true
-        blur.layer?.borderWidth = 1
-        blur.layer?.borderColor = NSColor(white: 1, alpha: 0.10).cgColor
+        blur.layer?.borderWidth = 0.5
+        blur.layer?.borderColor = NSColor(white: 1, alpha: 0.16).cgColor
         window.contentView = blur
+
+        // Glassmorphism layers: a faint dark tint to keep text legible while
+        // translucent, plus a top sheen for depth. Below the content, above blur.
+        let glass = NSView(frame: NSRect(x: 0, y: 0, width: Self.cardWidth, height: Self.cardHeight))
+        glass.wantsLayer = true
+        glass.layer?.backgroundColor = Theme.ink.withAlphaComponent(0.14).cgColor
+        glass.autoresizingMask = [.width, .height]
+        sheen.frame = glass.bounds
+        sheen.colors = [NSColor(white: 1, alpha: 0.14).cgColor, NSColor(white: 1, alpha: 0).cgColor]
+        sheen.startPoint = CGPoint(x: 0.5, y: 1.0)
+        sheen.endPoint = CGPoint(x: 0.5, y: 0.45)
+        glass.layer?.addSublayer(sheen)
+        blur.addSubview(glass)
 
         glyph.translatesAutoresizingMaskIntoConstraints = false
         glyph.imageScaling = .scaleProportionallyUpOrDown
-        glyph.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
+        glyph.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
+        glyph.setContentHuggingPriority(.required, for: .horizontal)
 
         label.translatesAutoresizingMaskIntoConstraints = false
         label.textColor = Theme.mist
-        label.font = Theme.rounded(15, .semibold)
+        label.font = Theme.rounded(13, .semibold)
         label.backgroundColor = .clear
         label.isBezeled = false
         label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         wave.translatesAutoresizingMaskIntoConstraints = false
+        wave.setContentHuggingPriority(.required, for: .horizontal)
 
         blur.addSubview(glyph)
         blur.addSubview(label)
         blur.addSubview(wave)
 
         NSLayoutConstraint.activate([
-            glyph.leadingAnchor.constraint(equalTo: blur.leadingAnchor, constant: 18),
-            glyph.topAnchor.constraint(equalTo: blur.topAnchor, constant: 17),
-            glyph.widthAnchor.constraint(equalToConstant: 20),
-            glyph.heightAnchor.constraint(equalToConstant: 20),
+            glyph.leadingAnchor.constraint(equalTo: blur.leadingAnchor, constant: 16),
+            glyph.centerYAnchor.constraint(equalTo: blur.centerYAnchor),
+            glyph.widthAnchor.constraint(equalToConstant: 18),
+            glyph.heightAnchor.constraint(equalToConstant: 18),
 
-            label.leadingAnchor.constraint(equalTo: glyph.trailingAnchor, constant: 10),
-            label.centerYAnchor.constraint(equalTo: glyph.centerYAnchor),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: blur.trailingAnchor, constant: -18),
+            label.leadingAnchor.constraint(equalTo: glyph.trailingAnchor, constant: 9),
+            label.centerYAnchor.constraint(equalTo: blur.centerYAnchor),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: wave.leadingAnchor, constant: -10),
 
-            wave.leadingAnchor.constraint(equalTo: blur.leadingAnchor, constant: 18),
-            wave.trailingAnchor.constraint(equalTo: blur.trailingAnchor, constant: -18),
-            wave.bottomAnchor.constraint(equalTo: blur.bottomAnchor, constant: -18),
-            wave.heightAnchor.constraint(equalToConstant: 30),
+            wave.trailingAnchor.constraint(equalTo: blur.trailingAnchor, constant: -16),
+            wave.centerYAnchor.constraint(equalTo: blur.centerYAnchor),
+            wave.widthAnchor.constraint(equalToConstant: 92),
+            wave.heightAnchor.constraint(equalToConstant: 20),
         ])
 
         positionBottomCenter()
@@ -79,7 +98,7 @@ final class HUDWindow {
     private func positionBottomCenter() {
         guard let screen = NSScreen.main else { return }
         let f = screen.visibleFrame
-        window.setFrameOrigin(NSPoint(x: f.midX - Self.cardWidth / 2, y: f.minY + 90))
+        window.setFrameOrigin(NSPoint(x: f.midX - Self.cardWidth / 2, y: f.minY + 84))
     }
 
     /// Feeds the live waveform while listening; ignored in other states.
@@ -129,15 +148,15 @@ final class HUDWindow {
     /// Order front without stealing focus, with a quick fade unless Reduce Motion is on.
     private func present() {
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || window.isVisible {
-            window.alphaValue = 1
+            window.alphaValue = Self.shownAlpha
             window.orderFrontRegardless()
             return
         }
         window.alphaValue = 0
         window.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.15
-            window.animator().alphaValue = 1
+            ctx.duration = 0.16
+            window.animator().alphaValue = Self.shownAlpha
         }
     }
 
