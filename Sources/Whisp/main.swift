@@ -1,5 +1,22 @@
 import AppKit
 
+// ── TEMPORARY SPIKE: paste-at-cursor + clipboard restore ────────────────────
+// Remove once live verification is confirmed.
+// Usage: .build/release/Whisp --spike-paste
+//        Focus a text field in TextEdit (or any app) within 3 s; watch "Hello from Whisp." appear.
+//        Clipboard should print "ORIGINAL" after the restore delay.
+if CommandLine.arguments.contains("--spike-paste") {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString("ORIGINAL", forType: .string)
+    print("Focus a text field in 3s…")
+    try await Task.sleep(nanoseconds: 3_000_000_000)
+    try? PasteInserter().insert("Hello from Whisp.")
+    try await Task.sleep(nanoseconds: 1_000_000_000)
+    print("Clipboard now: \(NSPasteboard.general.string(forType: .string) ?? "nil")")
+    exit(0)
+}
+// ── END TEMPORARY SPIKE ──────────────────────────────────────────────────────
+
 // ── TEMPORARY SPIKE: mic → 16 kHz → Whisper round-trip ──────────────────────
 // Remove this block once live verification is confirmed.
 // Usage: .build/release/Whisp --spike-record
