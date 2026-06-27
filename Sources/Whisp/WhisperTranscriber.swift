@@ -17,8 +17,12 @@ import WhispCore
 final class WhisperTranscriber: Transcribing, @unchecked Sendable {
     private let ctx: OpaquePointer
     private let lock = NSLock()
+    /// Vocabulary hint that biases decoding toward the user's terms (names,
+    /// brands, jargon). Empty disables it.
+    private let initialPrompt: String
 
-    init(modelPath: String) throws {
+    init(modelPath: String, initialPrompt: String = "") throws {
+        self.initialPrompt = initialPrompt
         var cparams = whisper_context_default_params()
         cparams.use_gpu = false // CPU backend only (no Metal compiler under CLT)
         guard let c = whisper_init_from_file_with_params(modelPath, cparams) else {
@@ -58,10 +62,18 @@ final class WhisperTranscriber: Transcribing, @unchecked Sendable {
         params.translate = false
         params.single_segment = false
 
+        func run() -> Int32 {
+            samples.withUnsafeBufferPointer { buf in
+                whisper_full(ctx, params, buf.baseAddress, Int32(buf.count))
+            }
+        }
         let rc: Int32 = "en".withCString { lang in
             params.language = lang
-            return samples.withUnsafeBufferPointer { buf in
-                whisper_full(ctx, params, buf.baseAddress, Int32(buf.count))
+            // Keep the vocabulary C-string alive across the whisper_full call.
+            guard !initialPrompt.isEmpty else { return run() }
+            return initialPrompt.withCString { ip in
+                params.initial_prompt = ip
+                return run()
             }
         }
         guard rc == 0 else {

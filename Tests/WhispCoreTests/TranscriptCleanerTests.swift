@@ -27,4 +27,21 @@ import Testing
         let out = TranscriptCleaner.offlineClean("hello there")
         #expect(out.hasSuffix(".") || out.hasSuffix("?") || out.hasSuffix("!"))
     }
+
+    @Test func polishPromptInjectsVocabularyTerms() {
+        let msgs = TranscriptCleaner.polishPrompt(raw: "hi", vocabulary: ["Niruron", "ROAS"])
+        #expect(msgs.first?.content.contains("Niruron") == true)
+        #expect(msgs.first?.content.contains("ROAS") == true)
+    }
+
+    @Test func polishPromptOmitsVocabularyClauseWhenEmpty() {
+        let msgs = TranscriptCleaner.polishPrompt(raw: "hi")
+        #expect(msgs.first?.content.contains("preserve them exactly") == false)
+    }
+
+    @Test func aiTemplatePromptInjectsVocabularyTerms() {
+        let msgs = TranscriptCleaner.aiTemplatePrompt(
+            template: "Write an email.", dictation: "to a client", vocabulary: ["GoHighLevel"])
+        #expect(msgs.first?.content.contains("GoHighLevel") == true)
+    }
 }

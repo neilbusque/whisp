@@ -21,6 +21,7 @@ final class WaveformView: NSView {
     private var phase: CGFloat = 0
     private var anim: Task<Void, Never>?
     private var mode: Mode = .idle
+    private var logCounter = 0
 
     override init(frame: NSRect) {
         let n = 16
@@ -38,12 +39,17 @@ final class WaveformView: NSView {
     /// Feed a 0...1 voice level. Instant attack, the loop handles decay.
     func pushLevel(_ level: Float) {
         guard mode == .live else { return }
-        let curved = pow(max(0, min(1, CGFloat(level))), 0.7)   // lift quiet speech
+        let clamped = max(0, min(1, CGFloat(level)))
+        let curved = min(1, pow(clamped, 0.55) * 1.6)   // gain so speech clearly drives the bars
         targetLevel = max(targetLevel, curved)
+        logCounter += 1
+        if logCounter % 20 == 0 {
+            Diag.log("wave.level in=\(String(format: "%.3f", Double(level))) target=\(String(format: "%.3f", Double(targetLevel)))")
+        }
         // With Reduce Motion there's no loop, so map straight to the bars.
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             for i in 0..<barCount {
-                barValues[i] = WaveformView.baseline + curved * profile[i]
+                barValues[i] = WaveformView.baseline + (1 - WaveformView.baseline) * curved * profile[i]
             }
             needsDisplay = true
         }
@@ -88,11 +94,12 @@ final class WaveformView: NSView {
         phase += 0.16
         switch mode {
         case .live:
-            targetLevel *= 0.90   // smooth release toward silence
+            targetLevel *= 0.92   // smooth release toward silence
             for i in 0..<barCount {
-                let dance = 0.55 + 0.45 * sin(phase * 1.7 + seeds[i])
-                let desired = WaveformView.baseline + targetLevel * profile[i] * dance
-                barValues[i] += (min(1, desired) - barValues[i]) * 0.35
+                let dance = 0.80 + 0.20 * sin(phase * 1.8 + seeds[i])
+                let desired = WaveformView.baseline
+                    + (1 - WaveformView.baseline) * targetLevel * profile[i] * dance
+                barValues[i] += (min(1, desired) - barValues[i]) * 0.5
             }
         case .shimmer:
             for i in 0..<barCount {

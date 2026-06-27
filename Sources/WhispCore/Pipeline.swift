@@ -21,14 +21,17 @@ public final class SpeechPipeline: @unchecked Sendable {
     private let transcriber: Transcribing
     private let cleaner: Cleaning
     private let inserter: TextInserting
+    private let vocabulary: [String]
     private let onStatus: (PipelineStatus) -> Void
 
     public init(snippets: SnippetStore, transcriber: Transcribing, cleaner: Cleaning,
-                inserter: TextInserting, onStatus: @escaping (PipelineStatus) -> Void) {
+                inserter: TextInserting, vocabulary: [String] = [],
+                onStatus: @escaping (PipelineStatus) -> Void) {
         self.snippets = snippets
         self.transcriber = transcriber
         self.cleaner = cleaner
         self.inserter = inserter
+        self.vocabulary = vocabulary
         self.onStatus = onStatus
     }
 
@@ -51,13 +54,14 @@ public final class SpeechPipeline: @unchecked Sendable {
                     onStatus(.polishing)
                     output = try await cleanOrFallback(
                         TranscriptCleaner.aiTemplatePrompt(template: m.snippet.content,
-                                                           dictation: m.remainder),
+                                                           dictation: m.remainder,
+                                                           vocabulary: vocabulary),
                         fallback: TranscriptCleaner.offlineClean(m.remainder))
                 }
             } else {
                 onStatus(.polishing)
                 output = try await cleanOrFallback(
-                    TranscriptCleaner.polishPrompt(raw: trimmed),
+                    TranscriptCleaner.polishPrompt(raw: trimmed, vocabulary: vocabulary),
                     fallback: TranscriptCleaner.offlineClean(trimmed))
             }
 

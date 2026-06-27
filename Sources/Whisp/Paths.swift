@@ -5,6 +5,7 @@ enum Paths {
     static var dir: String { NSString(string: "~/.whisp").expandingTildeInPath }
     static var configFile: String { dir + "/config.json" }
     static var snippetsFile: String { dir + "/snippets.json" }
+    static var vocabularyFile: String { dir + "/vocabulary.txt" }
     static var modelsDir: String { dir + "/models" }
 
     /// Creates `~/.whisp` + `~/.whisp/models`, and seeds config.json /
@@ -28,7 +29,81 @@ enum Paths {
             enc.outputFormatting = [.prettyPrinted, .sortedKeys]
             try enc.encode(seed).write(to: URL(fileURLWithPath: snippetsFile))
         }
+        if !fm.fileExists(atPath: vocabularyFile) {
+            try seedVocabulary.write(toFile: vocabularyFile, atomically: true, encoding: .utf8)
+        }
     }
+
+    /// Reads vocabulary.txt: one term per line, `#` comments and blanks ignored.
+    static func loadVocabulary() -> [String] {
+        guard let text = try? String(contentsOfFile: vocabularyFile, encoding: .utf8) else { return [] }
+        return text
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+    }
+
+    /// Marketing + brand terms so Whisp hears Neil's jargon correctly out of the box.
+    private static let seedVocabulary = """
+    # Whisp vocabulary — one term per line. Lines starting with # are ignored.
+    # These bias Whisper's transcription and tell the cleanup not to "correct" them.
+    # Add your own names, brands, clients, and jargon below.
+
+    # Brands & names
+    Niruron
+    Busque
+    busqueneil
+    Neil Busque
+    Whisp
+    Orbit
+    Hatch
+    DeepSeek
+    GoHighLevel
+    GHL
+    Klaviyo
+    HubSpot
+    Shopify
+    Meta Ads
+    Google Ads
+
+    # Marketing / SEO / paid search
+    ROAS
+    ROI
+    CPC
+    CPM
+    CTR
+    CPA
+    CPL
+    SERP
+    SEO
+    SEM
+    PPC
+    backlink
+    backlinks
+    retargeting
+    remarketing
+    lookalike audience
+    UTM
+    funnel
+    landing page
+    lead magnet
+    nurture sequence
+    cold email
+    conversion rate
+    cost per acquisition
+    attribution
+    impressions
+    click-through rate
+    organic traffic
+    paid search
+    programmatic
+    schema markup
+    canonical
+    anchor text
+    long-tail keyword
+    A/B test
+
+    """
 
     static func loadConfig() throws -> WhispConfig {
         let data = try Data(contentsOf: URL(fileURLWithPath: configFile))

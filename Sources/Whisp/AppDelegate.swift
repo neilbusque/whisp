@@ -48,7 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupPipeline() {
         do {
             let snippets = try Paths.loadSnippets()
-            let transcriber = try WhisperTranscriber(modelPath: Paths.modelPath(config.whisperModel))
+            let vocab = Paths.loadVocabulary()
+            let hint = vocab.isEmpty ? "" : "Vocabulary: " + vocab.joined(separator: ", ") + "."
+            let transcriber = try WhisperTranscriber(
+                modelPath: Paths.modelPath(config.whisperModel), initialPrompt: hint)
             let cleaner = DeepSeekCleaner(apiKey: config.deepseekKey)
             let inserter = PasteInserter()
             pipeline = SpeechPipeline(
@@ -56,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 transcriber: transcriber,
                 cleaner: cleaner,
                 inserter: inserter,
+                vocabulary: vocab,
                 // `onStatus` runs inside the pipeline's async `process(...)`, which
                 // is NOT guaranteed to be on the main actor. Hop before touching
                 // the @MainActor HUD / status item.
@@ -65,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self?.updateStatusTitle(status)
                     }
                 })
-            Diag.log("pipeline OK (model=\(config.whisperModel))")
+            Diag.log("pipeline OK (model=\(config.whisperModel), vocab=\(vocab.count) terms, key=\(config.deepseekKey.isEmpty ? "none" : "set"))")
         } catch {
             Diag.log("pipeline FAIL: \(error)")
             NSLog("Whisp pipeline init failed: \(error)")

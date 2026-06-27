@@ -9,11 +9,12 @@ public struct ChatMessage: Equatable, Codable, Sendable {
 public enum TranscriptCleaner {
     static let fillers: Set<String> = ["um", "uh", "erm", "ah", "like", "you know", "i mean"]
 
-    public static func polishPrompt(raw: String) -> [ChatMessage] {
+    public static func polishPrompt(raw: String, vocabulary: [String] = []) -> [ChatMessage] {
         let system = """
         You clean up dictated speech into polished written text. Remove filler words \
         (um, uh, like), fix grammar and punctuation, and format naturally. Do NOT add \
-        content, greetings, or commentary. Do NOT use em dashes. Return ONLY the cleaned text.
+        content, greetings, or commentary. Do NOT use em dashes. Return ONLY the cleaned text.\
+        \(vocabularyClause(vocabulary))
         """
         return [
             ChatMessage(role: "system", content: system),
@@ -21,11 +22,20 @@ public enum TranscriptCleaner {
         ]
     }
 
-    public static func aiTemplatePrompt(template: String, dictation: String) -> [ChatMessage] {
+    /// Appended to a system prompt so the model keeps the user's known terms
+    /// spelled correctly instead of "fixing" unfamiliar names.
+    static func vocabularyClause(_ vocabulary: [String]) -> String {
+        guard !vocabulary.isEmpty else { return "" }
+        return "\n\nThese terms are spelled correctly; preserve them exactly when they "
+            + "appear (fix near-misses to match): \(vocabulary.joined(separator: ", "))."
+    }
+
+    public static func aiTemplatePrompt(template: String, dictation: String,
+                                        vocabulary: [String] = []) -> [ChatMessage] {
         let system = """
         You generate written text from a template instruction plus the user's spoken \
         details. Follow the instruction exactly. Do NOT use em dashes. Return ONLY the \
-        generated text, no commentary.
+        generated text, no commentary.\(vocabularyClause(vocabulary))
         """
         let user = """
         INSTRUCTION:
