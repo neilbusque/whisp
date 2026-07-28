@@ -57,6 +57,14 @@ final class PracticeHotkey {
         let status = RegisterEventHotKey(UInt32(keyCode), mods, hotKeyID,
                                          GetApplicationEventTarget(), 0, &ref)
         guard status == noErr else {
+            // Release the handler we just installed. Otherwise an abandoned
+            // instance leaks it for the life of the process — and this branch
+            // fires exactly when another app owns the chord, which is the case
+            // a configurable hotkey exists to survive.
+            if let handler {
+                RemoveEventHandler(handler)
+                self.handler = nil
+            }
             Diag.log("practice hotkey: \(spec.display) is unavailable (status \(status)) — another app owns it")
             return false
         }
