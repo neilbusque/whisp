@@ -146,8 +146,20 @@ extension SpeechAnalyzer {
         let ps = pauses(envelope: envelope, binSeconds: binSeconds,
                         silenceThreshold: silenceThreshold, minPauseSec: minPauseSec)
 
-        let silentBins = envelope.filter { $0 < silenceThreshold }.count
-        let silenceRatio = envelope.isEmpty ? 0 : Double(silentBins) / Double(envelope.count)
+        // Bounded to speech, exactly like pauses() and speakingDurationSec:
+        // silence before the first word and after the last is dead air, not
+        // part of how the delivery sounded. Counting it would make this metric
+        // track hotkey-to-speech lag instead of speaking.
+        let silenceRatio: Double
+        if let b = speechBounds(envelope: envelope, silenceThreshold: silenceThreshold) {
+            let span = envelope[b.first...b.last]
+            let silentBins = span.filter { $0 < silenceThreshold }.count
+            silenceRatio = Double(silentBins) / Double(span.count)
+        } else {
+            // No speech at all. "100% silent" is the honest answer for a
+            // non-empty recording; an empty envelope has no ratio to report.
+            silenceRatio = envelope.isEmpty ? 0 : 1
+        }
 
         return SpeechMetrics(
             wordCount: words.count,

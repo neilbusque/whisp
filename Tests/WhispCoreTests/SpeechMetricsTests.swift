@@ -145,6 +145,26 @@ import Testing
         #expect(m.pauseCount == 1)
     }
 
+    @Test func silenceRatioIsBoundedToSpeechNotWallClock() {
+        // 20 quiet, 20 loud, 20 quiet, 20 loud, 20 quiet (100 bins @ 0.05s).
+        // Speech bounds are bins 20...79 (60 bins), of which 20 are the middle
+        // quiet stretch → 20/60 = 1/3. An unbounded implementation would divide
+        // by all 100 bins (40 silent / 100 = 0.6) — this test fails if the
+        // silenceRatio fix is reverted.
+        let e = env([(0.01, 20), (0.5, 20), (0.01, 20), (0.5, 20), (0.01, 20)])
+        let m = SpeechAnalyzer.analyze(transcript: "a b c", envelope: e, binSeconds: 0.05,
+                                       fillers: [], silenceThreshold: 0.06, minPauseSec: 1.0)
+        #expect(abs(m.silenceRatio - (1.0 / 3.0)) < 0.001)
+    }
+
+    @Test func allSilentEnvelopeYieldsFullSilenceRatio() {
+        let m = SpeechAnalyzer.analyze(transcript: "", envelope: env([(0.01, 100)]),
+                                       binSeconds: 0.05, fillers: [],
+                                       silenceThreshold: 0.06, minPauseSec: 1.0)
+        #expect(m.silenceRatio == 1)
+        #expect(!m.silenceRatio.isNaN)
+    }
+
     @Test func silentRecordingYieldsZeroesNotNaN() {
         let m = SpeechAnalyzer.analyze(transcript: "", envelope: env([(0.01, 200)]),
                                        binSeconds: 0.05, fillers: ["um"],
