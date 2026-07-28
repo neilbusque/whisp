@@ -45,4 +45,39 @@ import Foundation
             _ = try WavCodec.decode(Data(repeating: 0x41, count: 100))
         }
     }
+
+    @Test func decodesBodyTruncatedFileWithoutCrashing() throws {
+        // Encode 100 samples, then truncate partway through the body.
+        let samples = (0..<100).map { Float($0) / 100.0 }
+        let fullData = WavCodec.encode(samples: samples)
+        // Header is 44 bytes, so body starts at 44. 100 samples = 200 bytes.
+        // Truncate to 44 (header) + 80 (40 samples) = 124 bytes.
+        let truncated = Data(fullData.prefix(124))
+
+        // Should decode the 40 samples that are actually present, not crash or throw.
+        let (output, rate) = try WavCodec.decode(truncated)
+        #expect(rate == 16_000)
+        #expect(output.count == 40)
+        // Verify the decoded samples match the first 40 of the original.
+        for (a, b) in zip(output, samples.prefix(40)) {
+            #expect(abs(a - b) < 1e-4)
+        }
+    }
+
+    @Test func decodesOddByteBodyTruncationWithoutCrashing() throws {
+        // Encode 100 samples (200 bytes), truncate to an odd number of body bytes.
+        let samples = (0..<100).map { Float($0) / 100.0 }
+        let fullData = WavCodec.encode(samples: samples)
+        // Truncate to 44 (header) + 81 (odd number of bytes) = 125 bytes.
+        let truncated = Data(fullData.prefix(125))
+
+        // Should decode the complete samples (40 from 80 bytes) and drop the trailing odd byte.
+        let (output, rate) = try WavCodec.decode(truncated)
+        #expect(rate == 16_000)
+        #expect(output.count == 40)  // 80 bytes = 40 samples; the trailing byte is dropped
+        // Verify the decoded samples match the first 40.
+        for (a, b) in zip(output, samples.prefix(40)) {
+            #expect(abs(a - b) < 1e-4)
+        }
+    }
 }
