@@ -140,6 +140,31 @@ final class HUDWindow {
         present()
     }
 
+    /// Practice recording: amber glyph and an elapsed timer, so there is never
+    /// a doubt about which mode is capturing. The live waveform is fed by the
+    /// existing `setLevel(_:)`, same as dictation.
+    func showPractice(elapsed: TimeInterval) {
+        hideWork?.cancel()
+        setGlyph("record.circle", Theme.amber)
+        let mins = Int(elapsed) / 60
+        let secs = Int(elapsed) % 60
+        label.stringValue = String(format: "Practice  %d:%02d", mins, secs)
+        wave.setMode(.live)
+        positionBottomCenter()
+        present()
+    }
+
+    /// Post-recording practice status ("Saved — transcribing…", "Transcribing 40%").
+    func showPracticeStatus(_ text: String, done: Bool = false) {
+        hideWork?.cancel()
+        setGlyph(done ? "checkmark.circle.fill" : "waveform", done ? Theme.mint : Theme.aqua)
+        label.stringValue = text
+        wave.setMode(done ? .idle : .shimmer)
+        positionBottomCenter()
+        present()
+        if done { scheduleHide(after: 1.6) }
+    }
+
     private func setGlyph(_ symbol: String, _ tint: NSColor) {
         glyph.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         glyph.contentTintColor = tint
