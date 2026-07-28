@@ -202,6 +202,24 @@ struct SessionDetailView: View {
                     }
                 }
 
+                if session.metrics != nil {
+                    GroupBox("Coach feedback") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if let f = session.coachFeedback {
+                                Text(f).textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            } else {
+                                Text("Sends the transcript text to DeepSeek. Audio never leaves your Mac.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Button("Get feedback") {
+                                Task { await controller.requestCoachFeedback(for: session.id) }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
                 if trend.count > 1 {
                     GroupBox("Across your attempts at this prompt") {
                         TrendSparkline(points: trend)

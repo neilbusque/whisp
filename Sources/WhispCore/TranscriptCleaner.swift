@@ -50,6 +50,24 @@ public enum TranscriptCleaner {
         ]
     }
 
+    /// Builds a coaching critique request. Sends the TRANSCRIPT TEXT ONLY —
+    /// never audio, never an envelope, never a file path.
+    public static func coachPrompt(transcript: String, promptTitle: String,
+                                   metrics: SpeechMetrics) -> [ChatMessage] {
+        let stats = String(
+            format: "Pace %.0f wpm. Fillers %.1f per 100 words. %d pauses, longest %.1fs.",
+            metrics.wpm, metrics.fillerRate, metrics.pauseCount, metrics.longestPauseSec)
+        return [
+            ChatMessage(role: "system", content: """
+                You are a speaking coach. The user practised answering: "\(promptTitle)".
+                Give at most 5 short bullets of specific, actionable feedback on their \
+                delivery and structure. Quote their own words when pointing at a problem. \
+                No preamble, no praise padding, no em dashes. Be direct.
+                """),
+            ChatMessage(role: "user", content: "\(stats)\n\nTranscript:\n\(transcript)"),
+        ]
+    }
+
     /// Pure on-device fallback used when DeepSeek is unreachable.
     public static func offlineClean(_ raw: String) -> String {
         var words = raw.split(separator: " ").map(String.init)

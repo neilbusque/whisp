@@ -137,6 +137,27 @@ final class PracticeController {
         sessionsChanged()
     }
 
+    /// Opt-in. The ONLY egress in Practice Mode, and it carries transcript text
+    /// alone. Never called automatically.
+    func requestCoachFeedback(for id: UUID) async {
+        guard var s = store.all.first(where: { $0.id == id }),
+              let transcript = s.transcript, let metrics = s.metrics else { return }
+        onStatus("Asking the coach…")
+        do {
+            let messages = TranscriptCleaner.coachPrompt(
+                transcript: transcript, promptTitle: s.promptTitle, metrics: metrics)
+            s.coachFeedback = try await cleaner.complete(messages)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            onStatus("Coach feedback ready")
+        } catch {
+            s.coachFeedback = "Coach unavailable: \(error.localizedDescription)"
+            onStatus("Coach unavailable")
+        }
+        store.update(s)
+        persist()
+        sessionsChanged()
+    }
+
     func deleteSession(id: UUID) {
         guard let removed = store.delete(id: id) else { return }
         try? FileManager.default.removeItem(
