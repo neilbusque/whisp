@@ -47,14 +47,16 @@ import Testing
         #expect(chunks[1].startMS == Int(firstLenSec * 1_000))
     }
 
-    @Test func fallsBackToTheHardBoundaryWhenThereIsNoQuietPoint() {
+    @Test func uniformEnvelopeCutsAtTheSearchWindowStart() {
+        // With a uniformly loud envelope, the tie-break picks the search window's
+        // first bin (at 25s), not the hard boundary at 30s.
         let chunks = AudioChunker.chunk(samples: samples(45), sampleRate: rate,
                                         envelope: envelope(45), binSeconds: 0.05,
                                         maxChunkSec: 30, searchWindowSec: 5)
         #expect(chunks.count == 2)
-        // Uniformly loud: the minimum is the window's first bin, i.e. 25s.
         let firstLenSec = Double(chunks[0].samples.count) / Double(rate)
-        #expect(firstLenSec >= 25.0 && firstLenSec <= 30.0)
+        // Envelope's minimum is at the search window's first bin (25s ±0.1s for granularity).
+        #expect(firstLenSec >= 24.9 && firstLenSec <= 25.1)
     }
 
     @Test func chunksCoverEveryInputSampleExactlyOnce() {
@@ -74,11 +76,28 @@ import Testing
     }
 
     @Test func toleratesAnEnvelopeShorterThanTheAudio() {
-        // A truncated envelope must not crash or drop audio.
+        // A truncated envelope triggers the nil-fallback path: `quietestSample`
+        // returns nil because the search range is beyond envelope coverage, so
+        // the cut lands on the hard boundary (30s). This test proves the fallback
+        // was actually taken.
         let input = samples(45)
         let chunks = AudioChunker.chunk(samples: input, sampleRate: rate,
                                         envelope: envelope(5), binSeconds: 0.05,
                                         maxChunkSec: 30, searchWindowSec: 5)
+        #expect(chunks.count == 2)
+        #expect(chunks[0].samples.count == 30 * rate)
+        #expect(chunks.reduce(0) { $0 + $1.samples.count } == input.count)
+    }
+
+    @Test func emptyEnvelopeFallsBackToHardBoundary() {
+        // An empty envelope makes `quietestSample` return nil via its
+        // `!envelope.isEmpty` guard, isolating the fallback logic.
+        let input = samples(45)
+        let chunks = AudioChunker.chunk(samples: input, sampleRate: rate,
+                                        envelope: [], binSeconds: 0.05,
+                                        maxChunkSec: 30, searchWindowSec: 5)
+        #expect(chunks.count == 2)
+        #expect(chunks[0].samples.count == 30 * rate)
         #expect(chunks.reduce(0) { $0 + $1.samples.count } == input.count)
     }
 }
