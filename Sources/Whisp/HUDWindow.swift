@@ -154,7 +154,7 @@ final class HUDWindow {
         present()
     }
 
-    /// Post-recording practice status ("Saved — transcribing…", "Transcribing 40%").
+    /// Post-recording practice status ("Saved, transcribing…", "Transcribing 40%").
     func showPracticeStatus(_ text: String, done: Bool = false) {
         hideWork?.cancel()
         setGlyph(done ? "checkmark.circle.fill" : "waveform", done ? Theme.mint : Theme.aqua)

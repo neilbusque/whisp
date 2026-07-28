@@ -25,8 +25,10 @@ final class PracticeController {
     /// Fired on the main actor whenever a session is added or updated, so an
     /// open review window can refresh.
     var sessionsChanged: () -> Void = {}
-    /// Fired with a HUD-facing status string.
-    var onStatus: (String) -> Void = { _ in }
+    /// Fired with a HUD-facing status string and whether it's a terminal
+    /// (resting) state — the HUD auto-hides on terminal statuses and stays up
+    /// through in-flight/progress ones.
+    var onStatus: (String, Bool) -> Void = { _, _ in }
 
     init(recorder: AudioRecorder, transcriber: WhisperTranscriber, cleaner: Cleaning,
          config: WhispConfig, store: PracticeStore, prompts: PromptStore) {
@@ -63,7 +65,7 @@ final class PracticeController {
             Diag.log("practice: recording started \(sessionID)")
         } catch {
             Diag.log("practice: failed to start recording — \(error.localizedDescription)")
-            onStatus("Mic unavailable")
+            onStatus("Mic unavailable", true)
         }
     }
 
@@ -82,7 +84,7 @@ final class PracticeController {
             try Paths.writeRecording(samples: samples, filename: filename)
         } catch {
             Diag.log("practice: FAILED to write \(filename) — \(error.localizedDescription)")
-            onStatus("Could not save recording")
+            onStatus("Could not save recording", true)
             return
         }
 
@@ -94,7 +96,7 @@ final class PracticeController {
         store.append(session)
         persist()
         sessionsChanged()
-        onStatus("Saved — transcribing…")
+        onStatus("Saved, transcribing…", false)
 
         Task { await self.transcribe(session: session, samples: samples, envelope: envelope) }
     }
@@ -109,7 +111,7 @@ final class PracticeController {
             let segments = try await transcriber.transcribeSegments(chunks) { pct in
                 // transcribeSegments is nonisolated and calls this from the
                 // cooperative pool, NOT the main actor — assumeIsolated would trap.
-                Task { @MainActor in self.onStatus("Transcribing \(Int(pct * 100))%") }
+                Task { @MainActor in self.onStatus("Transcribing \(Int(pct * 100))%", false) }
             }
             let transcript = segments.map(\.text).joined()
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -123,11 +125,11 @@ final class PracticeController {
                 silenceThreshold: Float(config.silenceRMSThreshold),
                 minPauseSec: config.pauseThresholdSec)
             updated.status = .ready
-            onStatus("Practice session ready")
+            onStatus("Practice session ready", true)
         } catch {
             updated.status = .failed(error.localizedDescription)
             Diag.log("practice: transcription failed — \(error.localizedDescription)")
-            onStatus("Transcription failed")
+            onStatus("Transcription failed", true)
         }
 
         // update() ignores unknown ids, so a session deleted while this ran is
@@ -142,16 +144,16 @@ final class PracticeController {
     func requestCoachFeedback(for id: UUID) async {
         guard var s = store.all.first(where: { $0.id == id }),
               let transcript = s.transcript, let metrics = s.metrics else { return }
-        onStatus("Asking the coach…")
+        onStatus("Asking the coach…", false)
         do {
             let messages = TranscriptCleaner.coachPrompt(
                 transcript: transcript, promptTitle: s.promptTitle, metrics: metrics)
             s.coachFeedback = try await cleaner.complete(messages)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            onStatus("Coach feedback ready")
+            onStatus("Coach feedback ready", true)
         } catch {
             s.coachFeedback = "Coach unavailable: \(error.localizedDescription)"
-            onStatus("Coach unavailable")
+            onStatus("Coach unavailable", true)
         }
         store.update(s)
         persist()
