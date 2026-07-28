@@ -61,16 +61,41 @@ final class SessionPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     // AVFoundation calls delegate methods from an arbitrary thread, not
     // guaranteed to be the main actor — hop explicitly rather than assume.
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        // AVAudioPlayer isn't Sendable, so identity is captured as a plain
+        // ObjectIdentifier before crossing into the @MainActor closure, rather
+        // than sending `player` itself across the actor boundary.
+        let finishedID = ObjectIdentifier(player)
         Task { @MainActor in
+            // Only clear if the player that finished is still the current one.
+            // A newer clip may have started while this hop was queued; nil-ing
+            // it out here would drop the only strong reference to that clip's
+            // player and silently stop it mid-playback.
+            guard let current = self.player, ObjectIdentifier(current) == finishedID else { return }
             self.player = nil
             self.playingID = nil
         }
     }
 }
 
+/// The prompt sidebar's selection. A dedicated type rather than `UUID?`,
+/// because a nil-tagged row can never be selected: nil already means "nothing
+/// selected" to `List(selection:)`, so a "Free-form" row tagged `nil` would be
+/// permanently unreachable.
+private enum PromptFilter: Hashable {
+    case freeForm
+    case prompt(UUID)
+
+    var promptID: UUID? {
+        switch self {
+        case .freeForm: return nil
+        case .prompt(let id): return id
+        }
+    }
+}
+
 struct PracticeRootView: View {
     let controller: PracticeController
-    @State private var selectedPrompt: UUID?
+    @State private var selectedFilter: PromptFilter? = .freeForm
     @State private var selectedSession: PracticeSession?
     @State private var sessions: [PracticeSession] = []
     @State private var trend: [TrendPoint] = []
@@ -80,12 +105,12 @@ struct PracticeRootView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $selectedPrompt) {
+            List(selection: $selectedFilter) {
                 Section("Prompts") {
                     ForEach(prompts) { p in
-                        Text(p.title).tag(Optional(p.id))
+                        Text(p.title).tag(PromptFilter.prompt(p.id))
                     }
-                    Text("Free-form").tag(Optional<UUID>.none)
+                    Text("Free-form").tag(PromptFilter.freeForm)
                 }
             }
             .frame(minWidth: 200)
@@ -124,7 +149,7 @@ struct PracticeRootView: View {
             reload()
             controller.sessionsChanged = { reload() }
         }
-        .onChange(of: selectedPrompt) { _ in reload() }
+        .onChange(of: selectedFilter) { _ in reload() }
         .safeAreaInset(edge: .bottom) {
             HStack {
                 Text(diskUsage()).font(.caption).foregroundStyle(.secondary)
@@ -140,8 +165,9 @@ struct PracticeRootView: View {
     /// stored session changes, or the detail pane shows a stale `.pending`
     /// record forever after its transcription completes.
     private func reload() {
-        sessions = controller.store.sessions(forPrompt: selectedPrompt).reversed()
-        trend = controller.store.trend(forPrompt: selectedPrompt)
+        let promptID = selectedFilter?.promptID
+        sessions = controller.store.sessions(forPrompt: promptID).reversed()
+        trend = controller.store.trend(forPrompt: promptID)
         if let sel = selectedSession {
             selectedSession = sessions.first { $0.id == sel.id }
         }
