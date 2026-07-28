@@ -89,6 +89,20 @@ import Testing
         #expect(chunks.reduce(0) { $0 + $1.samples.count } == input.count)
     }
 
+    @Test func degenerateMaxChunkSamplesReturnsOneWholeChunkInsteadOfTrapping() {
+        // maxChunkSec * sampleRate < 1 truncates maxChunkSamples to 0, which
+        // would otherwise drive searchSamples negative and build an invalid
+        // Range (searchStart > hardEnd) that traps at runtime. Not reachable
+        // from the app's hardcoded 30s/16kHz call site, but it's one guard.
+        let input = samples(1)
+        let chunks = AudioChunker.chunk(samples: input, sampleRate: rate,
+                                        envelope: envelope(1), binSeconds: 0.05,
+                                        maxChunkSec: 0.00001, searchWindowSec: 5)
+        #expect(chunks.count == 1)
+        #expect(chunks[0].startMS == 0)
+        #expect(chunks[0].samples.count == input.count)
+    }
+
     @Test func emptyEnvelopeFallsBackToHardBoundary() {
         // An empty envelope makes `quietestSample` return nil via its
         // `!envelope.isEmpty` guard, isolating the fallback logic.

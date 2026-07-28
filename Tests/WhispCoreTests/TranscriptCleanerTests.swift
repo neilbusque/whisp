@@ -82,8 +82,9 @@ import Testing
         let msgs = TranscriptCleaner.coachPrompt(
             transcript: "some answer", promptTitle: "A prompt", metrics: sampleMetrics())
         let joined = msgs.map(\.content).joined(separator: "\n").lowercased()
-        for token in [".wav", "/recordings/", "filename", "file path", "envelope", "samples"] {
-            #expect(!joined.contains(token), "leaked audio-related token: \(token)")
+        for token in [".wav", "/recordings/", "filename", "file path", "envelope", "samples",
+                      "wordCount", "speakingDurationSec"] {
+            #expect(!joined.contains(token.lowercased()), "leaked audio-related token: \(token)")
         }
     }
 }

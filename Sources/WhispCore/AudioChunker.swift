@@ -25,6 +25,14 @@ public enum AudioChunker {
         guard !samples.isEmpty, sampleRate > 0, maxChunkSec > 0 else { return [] }
 
         let maxChunkSamples = Int(maxChunkSec * Double(sampleRate))
+        // A degenerate maxChunkSec/sampleRate combination (e.g. well under one
+        // sample) truncates maxChunkSamples to 0, which would drive
+        // searchSamples negative and build an invalid Range below. Fall back
+        // to a single whole-input chunk instead — consistent with how a
+        // non-positive maxChunkSec is already handled above.
+        guard maxChunkSamples >= 1 else {
+            return [AudioChunk(samples: samples, startMS: 0)]
+        }
         let searchSamples = min(Int(searchWindowSec * Double(sampleRate)), maxChunkSamples - 1)
 
         var out: [AudioChunk] = []
