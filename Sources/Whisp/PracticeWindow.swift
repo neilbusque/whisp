@@ -10,6 +10,10 @@ final class PracticeWindow {
 
     func show(controller: PracticeController) {
         if let window {
+            // Stay .accessory (LSUIElement) so Whisp never shows a Dock icon. An
+            // accessory app can still present a focusable key window; we just
+            // activate and bring it to front, no policy change.
+            NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             return
         }
@@ -21,15 +25,19 @@ final class PracticeWindow {
         w.contentView = NSHostingView(rootView: view)
         w.isReleasedWhenClosed = false
         w.center()
-        w.makeKeyAndOrderFront(nil)
         window = w
+        // Stay .accessory (LSUIElement) so Whisp never shows a Dock icon. An
+        // accessory app can still present a focusable key window; we just
+        // activate and bring it to front, no policy change.
+        NSApp.activate(ignoringOtherApps: true)
+        w.makeKeyAndOrderFront(nil)
     }
 }
 
 /// Plays back a recording. One shared player so starting a second clip stops
 /// the first instead of layering two voices.
 @MainActor
-final class SessionPlayer: ObservableObject {
+final class SessionPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var playingID: UUID?
     private var player: AVAudioPlayer?
 
@@ -44,9 +52,19 @@ final class SessionPlayer: ObservableObject {
             Diag.log("practice: cannot play \(session.audioFilename)")
             return
         }
+        p.delegate = self
         player = p
         playingID = session.id
         p.play()
+    }
+
+    // AVFoundation calls delegate methods from an arbitrary thread, not
+    // guaranteed to be the main actor — hop explicitly rather than assume.
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in
+            self.player = nil
+            self.playingID = nil
+        }
     }
 }
 
@@ -54,14 +72,11 @@ struct PracticeRootView: View {
     let controller: PracticeController
     @State private var selectedPrompt: UUID?
     @State private var selectedSession: PracticeSession?
-    @State private var refreshToken = UUID()
+    @State private var sessions: [PracticeSession] = []
+    @State private var trend: [TrendPoint] = []
     @StateObject private var player = SessionPlayer()
 
     private var prompts: [PracticePrompt] { controller.prompts.all }
-    private var sessions: [PracticeSession] {
-        controller.store.sessions(forPrompt: selectedPrompt).reversed()
-    }
-    private var trend: [TrendPoint] { controller.store.trend(forPrompt: selectedPrompt) }
 
     var body: some View {
         NavigationSplitView {
@@ -105,16 +120,30 @@ struct PracticeRootView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .id(refreshToken)
         .onAppear {
-            controller.sessionsChanged = { refreshToken = UUID() }
+            reload()
+            controller.sessionsChanged = { reload() }
         }
+        .onChange(of: selectedPrompt) { _ in reload() }
         .safeAreaInset(edge: .bottom) {
             HStack {
                 Text(diskUsage()).font(.caption).foregroundStyle(.secondary)
                 Spacer()
             }
             .padding(8)
+        }
+    }
+
+    /// Single source of truth for the two data-driven panes. Also reconciles
+    /// `selectedSession`, which is a value snapshot: it must be dropped when the
+    /// session disappears (deleted, or prompt switched) and REPLACED when the
+    /// stored session changes, or the detail pane shows a stale `.pending`
+    /// record forever after its transcription completes.
+    private func reload() {
+        sessions = controller.store.sessions(forPrompt: selectedPrompt).reversed()
+        trend = controller.store.trend(forPrompt: selectedPrompt)
+        if let sel = selectedSession {
+            selectedSession = sessions.first { $0.id == sel.id }
         }
     }
 
