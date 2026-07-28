@@ -57,13 +57,14 @@ Practice Mode follows v1's split: pure logic in `WhispCore` (unit-tested with Sw
 | `PracticeSession.swift` | The session record and `TranscriptSegment` (§5). Codable. Lives in Core so both targets share the type. |
 | `PracticeStore.swift` | Session index: append, load, delete, `trend(forPrompt:)`. |
 | `AudioChunker.swift` | Splits samples into ≤30s chunks at silence boundaries using the envelope (§6). |
+| `WavCodec.swift` | 16-bit PCM WAV encode/decode. Pure Foundation, so the round-trip is unit-testable. |
 
 ### New — `Whisp` (native, live-verified)
 
 | File | Responsibility |
 |---|---|
 | `PracticeHotkey.swift` | Carbon `RegisterEventHotKey`; parses `"ctrl+opt+cmd+r"` → modifier mask + virtual keycode. |
-| `WavWriter.swift` | `[Float]` @16kHz mono → 16-bit PCM WAV. Completes the pair with the existing `WavReader`. |
+| *(WAV writing lives in `WhispCore/WavCodec.swift`, not here — pure Foundation keeps it unit-testable. The AVFoundation-backed `WavReader` stays for importing arbitrary audio.)* | |
 | `PracticeController.swift` | Orchestrates: start capture → stop → write WAV → enqueue transcription → compute metrics → persist. |
 | `PracticeWindow.swift` | Prompt library, session list, session detail, playback, trend. |
 
@@ -186,7 +187,7 @@ Missing config keys take defaults, so existing `~/.whisp/config.json` files keep
 - Edge cases: empty transcript, silent recording, single word, sub-second session
 - `PromptStore` and `PracticeStore` CRUD, plus `trend()` chronological ordering and prompt-deletion behavior (denormalized `promptTitle` survives)
 - `AudioChunker`: boundary placement at quiet points, timestamp offsetting, single-chunk and shorter-than-one-chunk inputs
-- `WavWriter` → existing `WavReader` round-trip, asserting sample fidelity
+- `WavCodec` encode → decode round-trip, asserting sample fidelity within 16-bit quantization error
 - Config decoding with missing keys; hotkey-string parsing including malformed input
 
 **Live-verified by Neil** (the harness cannot drive these): hotkey firing globally across apps, mic capture, HUD states, audio playback, window chrome, and confirmation that dictation still fires instantly while a practice transcription runs.
