@@ -87,6 +87,23 @@ public struct SpeechMetrics: Codable, Equatable, Sendable {
     public let pauseCount: Int
     public let longestPauseSec: Double
     public let silenceRatio: Double
+
+    public init(wordCount: Int, durationSec: Double, speakingDurationSec: Double,
+                wpm: Double, fillerCounts: [String: Int], totalFillers: Int,
+                fillerRate: Double, pauses: [Pause], pauseCount: Int,
+                longestPauseSec: Double, silenceRatio: Double) {
+        self.wordCount = wordCount
+        self.durationSec = durationSec
+        self.speakingDurationSec = speakingDurationSec
+        self.wpm = wpm
+        self.fillerCounts = fillerCounts
+        self.totalFillers = totalFillers
+        self.fillerRate = fillerRate
+        self.pauses = pauses
+        self.pauseCount = pauseCount
+        self.longestPauseSec = longestPauseSec
+        self.silenceRatio = silenceRatio
+    }
 }
 
 extension SpeechAnalyzer {
