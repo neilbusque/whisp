@@ -58,8 +58,8 @@ than `"fn"` logs a warning to `~/.whisp/whisp.log` and falls back to Fn.
 
 ## Architecture
 
-- `WhispCore` — pure logic (config, snippets, cleaner prompts, `SpeechPipeline`), unit-tested.
-- `Whisp` — menu-bar app: AVAudioEngine recorder, vendored whisper.cpp transcriber,
+- `WhispCore`, pure logic (config, snippets, cleaner prompts, `SpeechPipeline`), unit-tested.
+- `Whisp`, the menu-bar app: AVAudioEngine recorder, vendored whisper.cpp transcriber,
   DeepSeek cleaner, paste inserter, Fn hotkey, floating HUD, SwiftUI managers.
 
 ## Test
