@@ -75,7 +75,8 @@ final class AudioRecorder: @unchecked Sendable {
                 // Sample-clock time, not wall-clock: exact and monotonic.
                 let seconds = Double(self._framesSeen) / fmt.sampleRate
                 self._framesSeen += Int(buf.frameLength)
-                self._envelope.add(level: rms, atSeconds: seconds)
+                let duration = Double(buf.frameLength) / fmt.sampleRate
+                self._envelope.add(level: rms, atSeconds: seconds, durationSeconds: duration)
                 return self._level
             }
             cb(rms)
