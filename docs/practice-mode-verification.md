@@ -13,23 +13,20 @@ document has been run. Every box is unverified until you check it yourself.
 
 ## Interference (the critical one)
 
-Practice Mode and dictation share **one** `AudioRecorder`, and neither path
-guards against the other already being active. `AVAudioEngine` allows only one
-tap per bus, so starting a second capture while one is running is expected to
-raise a fatal AVFoundation exception and crash the app.
+Practice Mode and dictation share **one** `AudioRecorder`. `AVAudioEngine`
+allows only one tap per bus, so both paths now guard against the other
+already being active: `AppDelegate` refuses to start dictation while a
+practice recording is in progress and refuses to start a practice recording
+while dictation is in progress, and `AudioRecorder.start()` itself throws if
+the engine is already running as a second line of defense. Starting one while
+the other is already active is refused and logged. It never crashes and never
+pastes anything.
 
-**This is a known, unfixed gap as of this commit.** It is not a surprise if it
-happens. It is not something to work around by retrying. Try it deliberately,
-in a session where a crash costs you nothing, so you know what it looks like
-before you hit it by accident:
+- [ ] Start a practice recording (`⌃⌥⌘R`), then, while it's still recording, hold **Fn** to dictate. Expected: nothing is pasted, no crash, `~/.whisp/whisp.log` logs "dictation: ignored, a practice recording is in progress". The practice recording keeps running undisturbed; stop it normally with `⌃⌥⌘R`.
+- [ ] Relaunch. Hold **Fn** to dictate, then, while still holding it, press `⌃⌥⌘R` to start a practice recording. Expected: the HUD shows "Finish dictating first", no practice recording starts, no crash, `~/.whisp/whisp.log` logs "practice: ignored, dictation is in progress". Dictation keeps running undisturbed; release **Fn** normally to finish it.
 
-- [ ] Start a practice recording (`⌃⌥⌘R`), then, while it's still recording, hold **Fn** to dictate. Note what happens (expected: crash).
-- [ ] Relaunch. Hold **Fn** to dictate, then, while still holding it, press `⌃⌥⌘R` to start a practice recording. Note what happens (expected: crash).
-
-If either case does NOT crash, that's worth flagging, it means the failure
-mode changed from what the code implies. Either way, until this is fixed,
-treat Practice Mode and dictation as mutually exclusive in real use: don't
-start one while the other might be running.
+If either case crashes, pastes practice audio, or lets a second capture start,
+that's a regression, flag it.
 
 ## Non-interference (transcription latency)
 - [ ] While a 3-minute practice session is transcribing, hold **Fn** and dictate. Text appears at the cursor within a couple of seconds. It does NOT wait for the practice transcription to finish.

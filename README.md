@@ -45,9 +45,12 @@ session, so the trend across attempts is trustworthy even where the absolute
 number reads low.
 
 **A caveat on capture:** Practice Mode and dictation share one audio recorder.
-As of this build, nothing stops you from starting both at once, and doing so
-is expected to crash the app. See `docs/practice-mode-verification.md` before
-you rely on this in a session where you might also dictate.
+Starting one while the other is already recording is refused and logged, not
+crashed: holding Fn while a practice recording is running does nothing, and
+pressing the practice hotkey while dictating shows "Finish dictating first"
+instead of starting a second capture. Stopping whichever side is already
+running is never blocked. See `docs/practice-mode-verification.md` to verify
+this live.
 
 Change the practice hotkey by editing `practiceHotkey` in `~/.whisp/config.json`
 (e.g. `"ctrl+cmd+p"`) and relaunching. An unparseable value logs a warning to

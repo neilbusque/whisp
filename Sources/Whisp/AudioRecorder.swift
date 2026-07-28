@@ -40,6 +40,15 @@ final class AudioRecorder: @unchecked Sendable {
 
     /// Starts microphone capture. Throws if the audio engine fails to start.
     func start() throws {
+        // One tap per bus. AVAudioEngine raises a fatal exception on a second
+        // installTap, and the callers share this instance, so enforce it here
+        // rather than trusting every call site to check.
+        guard !engine.isRunning else {
+            throw NSError(domain: "Whisp.AudioRecorder", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey:
+                            "Recorder is already running"])
+        }
+
         lock.lock()
         _buffers.removeAll()
         _inputFormat = nil

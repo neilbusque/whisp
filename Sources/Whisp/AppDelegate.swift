@@ -85,8 +85,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let controller = PracticeController(recorder: recorder, transcriber: transcriber,
                                                 cleaner: cleaner, config: config,
                                                 store: sessionStore, prompts: promptStore)
-            controller.onStatus = { [weak self] text in
-                MainActor.assumeIsolated { self?.hud.showPracticeStatus(text) }
+            controller.onStatus = { [weak self] text, done in
+                MainActor.assumeIsolated { self?.hud.showPracticeStatus(text, done: done) }
             }
             practice = controller
 
@@ -114,6 +114,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startRecording() {
         Diag.log("startRecording called (recording=\(recording), pipeline=\(pipeline != nil))")
         guard !recording, pipeline != nil else { return }
+        // The recorder is shared with Practice Mode. Refuse to steal it out
+        // from under an in-progress practice recording rather than let
+        // AudioRecorder.start() throw and silently drop the mic.
+        guard practice?.isRecording != true else {
+            Diag.log("dictation: ignored, a practice recording is in progress")
+            return
+        }
         recording = true
         do {
             try recorder.start()
@@ -141,6 +148,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func togglePractice() {
         guard let practice else { return }
+        // Only blocks STARTING a practice recording while dictation is in
+        // progress. Never blocks stopping one that's already running — the
+        // recorder is shared, and dictation can only be active if practice
+        // isn't (see the mirror-image guard in `startRecording()`).
+        if practice.isRecording != true, recording {
+            Diag.log("practice: ignored, dictation is in progress")
+            hud.showPracticeStatus("Finish dictating first", done: true)
+            return
+        }
         practice.toggle()
 
         if practice.isRecording {
