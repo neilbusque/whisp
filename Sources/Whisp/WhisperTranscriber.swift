@@ -90,4 +90,91 @@ final class WhisperTranscriber: Transcribing, @unchecked Sendable {
         }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    /// Transcribes chunks in order, returning whole-session-timed segments.
+    ///
+    /// Takes and releases the context lock ONCE PER CHUNK rather than holding it
+    /// for the whole recording. A 3-minute practice clip would otherwise block
+    /// every dictation attempt for its full ~60s of CPU work; this way dictation
+    /// waits at most one chunk.
+    ///
+    /// Parameters differ from `transcribe(_:)` on purpose (see practiceParams):
+    /// dictation wants Whisper's clean output, practice wants the disfluencies.
+    func transcribeSegments(_ chunks: [AudioChunk],
+                            progress: @Sendable @escaping (Double) -> Void) async throws
+        -> [TranscriptSegment] {
+        var all: [TranscriptSegment] = []
+        for (i, chunk) in chunks.enumerated() {
+            let segs: [TranscriptSegment] = try await withCheckedThrowingContinuation { cont in
+                DispatchQueue.global(qos: .utility).async {
+                    do {
+                        cont.resume(returning: try self.segmentsSync(chunk))
+                    } catch {
+                        cont.resume(throwing: error)
+                    }
+                }
+            }
+            all.append(contentsOf: segs)
+            progress(Double(i + 1) / Double(chunks.count))
+            // Yield between chunks so a queued dictation can take the lock.
+            await Task.yield()
+        }
+        return all
+    }
+
+    /// Biases decoding toward verbatim output. Whisper is trained to emit clean
+    /// readable text and drops disfluencies; a disfluent initial_prompt plus
+    /// unsuppressed non-speech tokens recovers much (NOT all) of it. Filler
+    /// counts will still undercount reality — the trend stays honest because
+    /// the bias is identical across sessions.
+    private static let practicePrompt =
+        "Um, so, uh, I mean, like, you know, it's basically, uh, kind of what I wanted to say."
+
+    private func segmentsSync(_ chunk: AudioChunk) throws -> [TranscriptSegment] {
+        lock.lock(); defer { lock.unlock() }
+        guard !chunk.samples.isEmpty else { return [] }
+
+        var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
+        params.print_progress = false
+        params.print_realtime = false
+        params.print_timestamps = false
+        params.no_timestamps = false          // segments need timing
+        // suppress_nst already defaults to false in this whisper.cpp; setting it
+        // explicitly pins the value so a future default flip cannot silently start
+        // stripping disfluencies. The real verbatim bias comes from the disfluent
+        // initial_prompt below.
+        params.suppress_nst = false
+        params.translate = false
+        params.single_segment = false
+
+        func run() -> Int32 {
+            chunk.samples.withUnsafeBufferPointer { buf in
+                whisper_full(ctx, params, buf.baseAddress, Int32(buf.count))
+            }
+        }
+        let rc: Int32 = "en".withCString { lang in
+            params.language = lang
+            return Self.practicePrompt.withCString { ip in
+                params.initial_prompt = ip
+                return run()
+            }
+        }
+        guard rc == 0 else {
+            throw NSError(domain: "Whisp.Transcriber", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey:
+                            "whisper_full failed in practice mode (rc=\(rc))"])
+        }
+
+        var out: [TranscriptSegment] = []
+        let n = whisper_full_n_segments(ctx)
+        for i in 0..<n {
+            guard let raw = whisper_full_get_segment_text(ctx, i) else { continue }
+            // whisper timestamps are in centiseconds; ×10 → ms, then offset into
+            // whole-session time.
+            let t0 = Int(whisper_full_get_segment_t0(ctx, i)) * 10 + chunk.startMS
+            let t1 = Int(whisper_full_get_segment_t1(ctx, i)) * 10 + chunk.startMS
+            out.append(TranscriptSegment(text: String(cString: raw), startMS: t0, endMS: t1))
+        }
+        return out
+    }
 }
