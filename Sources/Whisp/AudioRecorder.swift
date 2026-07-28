@@ -131,8 +131,11 @@ final class AudioRecorder: @unchecked Sendable {
     /// Practice-mode variant of `stop()`. Returns the same samples plus the
     /// 20 Hz envelope accumulated during capture.
     func stopWithEnvelope() -> (samples: [Float], envelope: [Float]) {
+        // stop() first: removeTap drains in-flight callbacks, so any level
+        // delivered during the drain is only in the builder AFTER stop returns.
+        let samples = stop()
         let envelope = lock.withLock { _envelope.finish() }
-        return (stop(), envelope)
+        return (samples, envelope)
     }
 
     // MARK: - Private helpers
