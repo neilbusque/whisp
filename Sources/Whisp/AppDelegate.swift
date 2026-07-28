@@ -11,6 +11,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pipeline: SpeechPipeline?
     private var config = WhispConfig.defaults
     private var recording = false
+    private var practice: PracticeController?
+    private var practiceHotkey: PracticeHotkey?
+    private var promptPicker: PromptPickerPanel?
+    private var practiceTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Diag.log("=== launch ===")
@@ -70,6 +74,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 })
             Diag.log("pipeline OK (model=\(config.whisperModel), vocab=\(vocab.count) terms, key=\(config.deepseekKey.isEmpty ? "none" : "set"))")
+
+            if config.hotkey.lowercased() != "fn" {
+                Diag.log("config: hotkey '\(config.hotkey)' is not supported — dictation is Fn-only; using Fn")
+            }
+
+            // Practice Mode.
+            let promptStore = (try? Paths.loadPrompts()) ?? PromptStore(prompts: PromptStore.seed)
+            let sessionStore = (try? Paths.loadSessions()) ?? PracticeStore(sessions: [])
+            let controller = PracticeController(recorder: recorder, transcriber: transcriber,
+                                                cleaner: cleaner, config: config,
+                                                store: sessionStore, prompts: promptStore)
+            controller.onStatus = { [weak self] text in
+                MainActor.assumeIsolated { self?.hud.showPracticeStatus(text) }
+            }
+            practice = controller
+
+            // Fall back to the default if the config value is malformed, so a typo
+            // degrades to a working hotkey instead of a silently dead feature.
+            let spec = HotkeySpec.parse(config.practiceHotkey)
+                ?? HotkeySpec.parse(WhispConfig.defaults.practiceHotkey)!
+            if HotkeySpec.parse(config.practiceHotkey) == nil {
+                Diag.log("config: practiceHotkey '\(config.practiceHotkey)' is malformed — using \(spec.display)")
+            }
+            let practiceHK = PracticeHotkey(spec: spec) { [weak self] in
+                MainActor.assumeIsolated { self?.togglePractice() }
+            }
+            practiceHK.register()
+            practiceHotkey = practiceHK
         } catch {
             Diag.log("pipeline FAIL: \(error)")
             NSLog("Whisp pipeline init failed: \(error)")
@@ -105,6 +137,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { await pipeline.process(samples: samples) }
     }
 
+    // MARK: - Practice Mode
+
+    private func togglePractice() {
+        guard let practice else { return }
+        practice.toggle()
+
+        if practice.isRecording {
+            let picker = PromptPickerPanel(prompts: practice.prompts.all) { [weak self] picked in
+                self?.practice?.setPrompt(picked)
+            }
+            picker.present()
+            promptPicker = picker
+
+            // Ticks the elapsed timer. The waveform is already live: the
+            // `recorder.level` handler assigned at startup (AppDelegate.swift:30)
+            // feeds hud.setLevel for BOTH modes, which is why neither
+            // PracticeController nor this method reassigns it.
+            let started = Date()
+            practiceTimer?.invalidate()
+            practiceTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let p = self.practice, p.isRecording else { return }
+                    self.hud.showPractice(elapsed: Date().timeIntervalSince(started))
+                }
+            }
+        } else {
+            practiceTimer?.invalidate()
+            practiceTimer = nil
+            promptPicker?.dismiss()
+            promptPicker = nil
+        }
+    }
+
     // MARK: - Menu bar
 
     private func setupMenuBar() {
@@ -116,6 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(statusMenuItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Edit Snippets…", action: #selector(openSnippets), keyEquivalent: "s"))
+        menu.addItem(NSMenuItem(title: "Practice…", action: #selector(openPractice), keyEquivalent: "p"))
         menu.addItem(NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Whisp", action: #selector(quit), keyEquivalent: "q"))
@@ -152,6 +218,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openSettings() {
         SettingsWindowController.shared.show(configPath: Paths.configFile)
+    }
+
+    @objc private func openPractice() {
+        guard let practice else { return }
+        PracticeWindow.shared.show(controller: practice)
     }
 
     @objc private func quit() {
