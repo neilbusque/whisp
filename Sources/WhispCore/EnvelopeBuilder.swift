@@ -20,7 +20,7 @@ public final class EnvelopeBuilder {
 
     public func add(level: Float, atSeconds t: Double) {
         guard t >= 0 else { return }
-        let idx = Int(t / binSeconds)
+        let idx = Self.binIndex(forSeconds: t, binSeconds: binSeconds)
         if idx >= bins.count {
             bins.append(contentsOf: repeatElement(0, count: idx - bins.count + 1))
         }
@@ -28,4 +28,15 @@ public final class EnvelopeBuilder {
     }
 
     public func finish() -> [Float] { bins }
+
+    /// `Int(t / binSeconds)` alone is wrong: for t an exact multiple of
+    /// binSeconds, IEEE-754 error makes the quotient land just BELOW the
+    /// integer (0.15 / 0.05 == 2.9999999999999996), truncating the level into
+    /// the previous bin. Snap to the nearest integer when we are within an
+    /// epsilon of it; floor otherwise.
+    static func binIndex(forSeconds t: Double, binSeconds: Double) -> Int {
+        let raw = t / binSeconds
+        let nearest = raw.rounded()
+        return Int(abs(raw - nearest) < 1e-9 ? nearest : raw.rounded(.down))
+    }
 }
