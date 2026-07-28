@@ -22,6 +22,40 @@ Microphone and Accessibility.
 - Say a snippet keyword (e.g. "bug report template") to expand it.
 - **Edit Snippets…** / **Settings…** from the menu bar.
 
+## Practice Mode
+
+Press `⌃⌥⌘R` to start a practice recording, press it again to stop. Pick what
+you're practising from the prompt list that appears. The mic is already live,
+so nothing is lost while you choose.
+
+Recordings are saved to `~/.whisp/recordings/` as 16 kHz mono WAV, roughly
+1.9 MB per minute, and **never leave your Mac**. Each session is transcribed
+on-device and scored on pace (WPM), filler rate, pauses, and silence ratio.
+Open the review window from the menu bar → **Practice…** to play a session
+back, read the transcript, and see how your metrics on that prompt have moved
+across attempts.
+
+Edit the prompt list at `~/.whisp/prompts.json` and the counted filler words at
+`~/.whisp/fillers.txt` (one per line, `#` for comments).
+
+**A caveat on filler counts:** Whisper is trained to produce clean text and
+drops some disfluencies. Whisp biases decoding toward verbatim output, but
+absolute filler counts still run lower than reality. The bias is the same every
+session, so the trend across attempts is trustworthy even where the absolute
+number reads low.
+
+**A caveat on capture:** Practice Mode and dictation share one audio recorder.
+As of this build, nothing stops you from starting both at once, and doing so
+is expected to crash the app. See `docs/practice-mode-verification.md` before
+you rely on this in a session where you might also dictate.
+
+Change the practice hotkey by editing `practiceHotkey` in `~/.whisp/config.json`
+(e.g. `"ctrl+cmd+p"`) and relaunching. An unparseable value logs a warning to
+`~/.whisp/whisp.log` and falls back to `⌃⌥⌘R`.
+
+The dictation hotkey field (`hotkey`) is validated and Fn-only: any value other
+than `"fn"` logs a warning to `~/.whisp/whisp.log` and falls back to Fn.
+
 ## Architecture
 
 - `WhispCore` — pure logic (config, snippets, cleaner prompts, `SpeechPipeline`), unit-tested.
