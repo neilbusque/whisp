@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import WhispCore
 
 /// Captures microphone audio at the hardware sample rate, then converts
 /// captured PCM to 16 kHz mono Float32 on ``stop()``.
@@ -23,6 +24,11 @@ final class AudioRecorder: @unchecked Sendable {
     // Protected by `lock`; read on the audio thread, settable by callers.
     private var _level: (Float) -> Void = { _ in }
 
+    // Protected by `lock`. Built from the same RMS the tap already computes, so
+    // there is no extra DSP cost. Dictation ignores it.
+    private var _envelope = EnvelopeBuilder()
+    private var _framesSeen: Int = 0
+
     /// Called on the audio thread during recording with a 0–1 RMS level.
     /// Safe to set before or during recording.
     var level: (Float) -> Void {
@@ -37,6 +43,8 @@ final class AudioRecorder: @unchecked Sendable {
         lock.lock()
         _buffers.removeAll()
         _inputFormat = nil
+        _envelope = EnvelopeBuilder()
+        _framesSeen = 0
         lock.unlock()
 
         let input = engine.inputNode
@@ -55,6 +63,10 @@ final class AudioRecorder: @unchecked Sendable {
             // closure can never block — or re-enter — the lock.
             let cb: (Float) -> Void = self.lock.withLock {
                 if let copy { self._buffers.append(copy) }
+                // Sample-clock time, not wall-clock: exact and monotonic.
+                let seconds = Double(self._framesSeen) / fmt.sampleRate
+                self._framesSeen += Int(buf.frameLength)
+                self._envelope.add(level: rms, atSeconds: seconds)
                 return self._level
             }
             cb(rms)
@@ -105,6 +117,13 @@ final class AudioRecorder: @unchecked Sendable {
                                                         count: Int(outBuf.frameLength)))
         }
         return out
+    }
+
+    /// Practice-mode variant of `stop()`. Returns the same samples plus the
+    /// 20 Hz envelope accumulated during capture.
+    func stopWithEnvelope() -> (samples: [Float], envelope: [Float]) {
+        let envelope = lock.withLock { _envelope.finish() }
+        return (stop(), envelope)
     }
 
     // MARK: - Private helpers

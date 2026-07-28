@@ -7,6 +7,38 @@ enum Paths {
     static var snippetsFile: String { dir + "/snippets.json" }
     static var vocabularyFile: String { dir + "/vocabulary.txt" }
     static var modelsDir: String { dir + "/models" }
+    static var recordingsDir: String { dir + "/recordings" }
+    static var sessionsFile: String { dir + "/sessions.json" }
+    static var promptsFile: String { dir + "/prompts.json" }
+    static var fillersFile: String { dir + "/fillers.txt" }
+
+    static func recordingURL(filename: String) -> URL {
+        URL(fileURLWithPath: recordingsDir + "/" + filename)
+    }
+
+    /// Writes 16 kHz mono samples as a 16-bit PCM WAV.
+    static func writeRecording(samples: [Float], filename: String) throws {
+        try FileManager.default.createDirectory(atPath: recordingsDir,
+                                                withIntermediateDirectories: true)
+        try WavCodec.encode(samples: samples).write(to: recordingURL(filename: filename))
+    }
+
+    static func loadFillers() -> [String] {
+        guard let text = try? String(contentsOfFile: fillersFile, encoding: .utf8) else {
+            return FillerList.parse(FillerList.seed)
+        }
+        return FillerList.parse(text)
+    }
+
+    static func loadPrompts() throws -> PromptStore {
+        let data = try Data(contentsOf: URL(fileURLWithPath: promptsFile))
+        return try PromptStore.load(from: data)
+    }
+
+    static func loadSessions() throws -> PracticeStore {
+        let data = try Data(contentsOf: URL(fileURLWithPath: sessionsFile))
+        return try PracticeStore.load(from: data)
+    }
 
     /// Creates `~/.whisp` + `~/.whisp/models`, and seeds config.json /
     /// snippets.json with sensible defaults only if they don't already exist.
@@ -31,6 +63,20 @@ enum Paths {
         }
         if !fm.fileExists(atPath: vocabularyFile) {
             try seedVocabulary.write(toFile: vocabularyFile, atomically: true, encoding: .utf8)
+        }
+
+        try fm.createDirectory(atPath: recordingsDir, withIntermediateDirectories: true)
+
+        if !fm.fileExists(atPath: fillersFile) {
+            try FillerList.seed.write(toFile: fillersFile, atomically: true, encoding: .utf8)
+        }
+        if !fm.fileExists(atPath: promptsFile) {
+            let enc = JSONEncoder()
+            enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try enc.encode(PromptStore.seed).write(to: URL(fileURLWithPath: promptsFile))
+        }
+        if !fm.fileExists(atPath: sessionsFile) {
+            try Data("[]".utf8).write(to: URL(fileURLWithPath: sessionsFile))
         }
     }
 
