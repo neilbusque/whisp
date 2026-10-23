@@ -195,6 +195,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.onStatus = { [weak self] text, done, error in
             MainActor.assumeIsolated {
                 guard let self, !self.recording, !self.processing else { return }
+                // Older practice work can finish during a new recording.
+                if done && !error && self.practice?.isRecording == true { return }
                 self.hud.showPracticeStatus(text, done: done, error: error)
                 self.workspace.status = done ? "Ready" : text
             }

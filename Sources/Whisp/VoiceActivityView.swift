@@ -33,7 +33,6 @@ final class VoiceActivityView: NSView {
     private static let blue = NSColor(srgbRed: 0.22, green: 0.48, blue: 0.98, alpha: 1)
     private static let violet = NSColor(srgbRed: 0.59, green: 0.35, blue: 0.94, alpha: 1)
     private static let rose = NSColor(srgbRed: 0.86, green: 0.34, blue: 0.76, alpha: 1)
-    private static let mint = NSColor(srgbRed: 0.16, green: 0.72, blue: 0.52, alpha: 1)
     private static let amber = NSColor(srgbRed: 0.88, green: 0.53, blue: 0.12, alpha: 1)
 
     override convenience init(frame frameRect: NSRect) {
@@ -185,7 +184,7 @@ final class VoiceActivityView: NSView {
 
     private func updateAppearance(animated: Bool) {
         glyph.layer?.removeAllAnimations()
-        let isSymbol = state == .done || state == .error
+        let isSymbol = state == .error
         let palette = state == .polishing
             ? [Self.rose, Self.violet, Self.blue, Self.cyan]
             : [Self.cyan, Self.blue, Self.violet, Self.rose]
@@ -197,9 +196,9 @@ final class VoiceActivityView: NSView {
         glow.colors = waves.colors
         glow.opacity = isSymbol || state == .idle ? 0 : 0.18
         glyph.isHidden = !isSymbol
-        glyph.contentTintColor = state == .error ? Self.amber : Self.mint
+        glyph.contentTintColor = Self.amber
         glyph.image = isSymbol
-            ? NSImage(systemSymbolName: state == .error ? "exclamationmark" : "checkmark",
+            ? NSImage(systemSymbolName: "exclamationmark",
                       accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 21, weight: .medium))
             : nil
         CATransaction.commit()

@@ -70,4 +70,28 @@ import WhispCore
         #expect(recording.window.isVisible)
         #expect(recording.window.title == "Whisp: Listening")
     }
+
+    @Test func completionFadesQuicklyAndDoesNotReopenAHiddenIndicator() async throws {
+        _ = NSApplication.shared
+        let dictation = HUDWindow(reducedMotion: false)
+        let practice = HUDWindow(reducedMotion: false)
+        let still = HUDWindow(reducedMotion: true)
+        defer { dictation.hide(); practice.hide(); still.hide() }
+        dictation.show(.done(""))
+        practice.showPracticeStatus("Practice ready", done: true)
+        #expect(!dictation.window.isVisible)
+        #expect(!practice.window.isVisible)
+
+        still.show(.listening)
+        still.show(.done(""))
+        #expect(!still.window.isVisible)
+
+        dictation.show(.transcribing)
+        practice.showPractice(elapsed: 10)
+        dictation.show(.done(""))
+        practice.showPracticeStatus("Practice ready", done: true)
+        try await Task.sleep(for: .milliseconds(350))
+        #expect(!dictation.window.isVisible)
+        #expect(!practice.window.isVisible)
+    }
 }

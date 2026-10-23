@@ -59,8 +59,7 @@ final class HUDWindow: NSObject {
         case .transcribing: present(.transcribing, description: "Transcribing")
         case .polishing: present(.polishing, description: "Polishing")
         case .done:
-            present(.done, description: "Done")
-            scheduleHide(after: 1.0)
+            finish(description: "Done")
         case .error(let text):
             present(.error, description: text, message: text)
             scheduleHide(after: noticeDuration(text), fadeDuration: 0.12)
@@ -74,10 +73,21 @@ final class HUDWindow: NSObject {
     }
 
     func showPracticeStatus(_ text: String, done: Bool = false, error: Bool = false) {
-        present(error ? .error : done ? .done : .transcribing, description: text,
+        if done && !error { finish(description: text); return }
+        present(error ? .error : .transcribing, description: text,
                 message: error ? text : nil)
         if error { scheduleHide(after: noticeDuration(text), fadeDuration: 0.12) }
-        else if done { scheduleHide(after: 1.6) }
+    }
+
+    private func finish(description: String) {
+        guard window.isVisible, !reducedMotion() else { hide(); return }
+        hideWork?.cancel()
+        presentation += 1
+        activity.setState(.done)
+        activity.setAccessibilityLabel(description)
+        window.title = "Whisp: \(description)"
+        layout(message: nil)
+        scheduleHide(after: 0, fadeDuration: 0.16)
     }
 
     private func present(_ state: VoiceActivityView.State, description: String, message text: String? = nil) {

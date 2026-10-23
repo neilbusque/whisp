@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.7 · 2026-10-23
+
+- Remove the completion checkmark from dictation and practice.
+- Fade the waveform away as soon as work finishes.
+
 ## 0.6.6 · 2026-10-23
 
 - Make dark notifications smaller with tighter padding and typography.

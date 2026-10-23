@@ -150,7 +150,7 @@ import Testing
         #expect(waveLayer(in: view)?.backgroundColor == nil)
         #expect(waveLayer(in: view)?.mask?.backgroundColor == nil)
         #expect((waveLayer(in: view) as? CAGradientLayer)?.colors?.count == 4)
-        for state in [VoiceActivityView.State.listening, .practice, .transcribing, .polishing] {
+        for state in [VoiceActivityView.State.listening, .practice, .transcribing, .polishing, .done] {
             view.setState(state)
             #expect(view.subviews.compactMap { $0 as? NSImageView }.allSatisfy { $0.isHidden && $0.image == nil })
             #expect(waveLayer(in: view)?.opacity == 1)

@@ -87,7 +87,7 @@ final class HUDPreviewWindow: NSObject, NSApplicationDelegate {
 
     private func show(_ index: Int) {
         levels?.cancel()
-        let states: [VoiceActivityView.State] = [.listening, .transcribing, .polishing, .done, .idle, .practice, .idle, .listening]
+        let states: [VoiceActivityView.State] = [.listening, .transcribing, .polishing, .idle, .idle, .practice, .idle, .listening]
         sample.setState(states.indices.contains(index) ? states[index] : .idle)
         darkSample.setState(states.indices.contains(index) ? states[index] : .idle)
         let message: String? = switch index {
