@@ -1,7 +1,7 @@
 import AppKit
 import WhispCore
 
-/// A floating activity icon. It cannot activate, take keyboard focus, or catch
+/// A floating aurora waveform. It cannot activate, take keyboard focus, or catch
 /// mouse input. Text appears only when there is something the user must read.
 @MainActor
 final class HUDWindow: NSObject {
@@ -20,15 +20,15 @@ final class HUDWindow: NSObject {
 
     init(reducedMotion: Bool? = nil) {
         self.reducedMotion = { reducedMotion ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
-        activity = VoiceActivityView(frame: NSRect(x: 0, y: 0, width: 64, height: 64),
+        activity = VoiceActivityView(frame: NSRect(origin: .zero, size: VoiceActivityView.preferredSize),
                                      reduceMotion: reducedMotion)
-        window = Panel(contentRect: NSRect(x: 0, y: 0, width: 80, height: 80),
+        window = Panel(contentRect: NSRect(x: 0, y: 0, width: 196, height: 76),
                        styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         super.init()
         window.level = .floating
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.appearance = NSAppearance(named: .darkAqua)
+        window.appearance = NSAppearance(named: .aqua)
         window.hasShadow = false
         window.ignoresMouseEvents = true
         window.hidesOnDeactivate = false
@@ -37,7 +37,7 @@ final class HUDWindow: NSObject {
         let content = NSView(frame: window.frame)
         window.contentView = content
         content.addSubview(activity)
-        message.material = .hudWindow
+        message.material = .popover
         message.blendingMode = .behindWindow
         message.state = .active
         message.wantsLayer = true
@@ -47,7 +47,7 @@ final class HUDWindow: NSObject {
         message.layer?.borderColor = NSColor(white: 1, alpha: 0.16).cgColor
         content.addSubview(message)
         detail.font = .systemFont(ofSize: 12, weight: .medium)
-        detail.textColor = .white
+        detail.textColor = .labelColor
         detail.maximumNumberOfLines = 0
         message.addSubview(detail)
         message.isHidden = true
@@ -117,8 +117,9 @@ final class HUDWindow: NSObject {
     }
 
     private func layout(message text: String?) {
-        let width: CGFloat = text == nil ? 80 : 340
-        var height: CGFloat = 80
+        let waveSize = VoiceActivityView.preferredSize
+        let width: CGFloat = text == nil ? waveSize.width + 20 : 340
+        var height: CGFloat = waveSize.height + 20
         if let text {
             detail.stringValue = text
             let textWidth: CGFloat = width - 104
@@ -137,7 +138,9 @@ final class HUDWindow: NSObject {
             }
         }
         message.isHidden = text == nil
-        activity.frame = NSRect(x: 8, y: (height - 64) / 2, width: 64, height: 64)
+        let activityWidth = text == nil ? waveSize.width : 56
+        activity.frame = NSRect(x: 10, y: (height - waveSize.height) / 2,
+                                width: activityWidth, height: waveSize.height)
         let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         window.setFrame(NSRect(x: visible.midX - width / 2, y: visible.minY + 72,
                                width: width, height: height), display: true)
@@ -171,5 +174,7 @@ final class HUDWindow: NSObject {
         }
     }
 
-    @objc private func motionPreferenceChanged() { activity.refreshMotionPreference() }
+    @objc private func motionPreferenceChanged() {
+        activity.refreshMotionPreference()
+    }
 }

@@ -72,8 +72,9 @@ Keep a text field focused, hold **Fn / Globe**, speak, then release. Wait for th
 insertion to finish before starting the next recording. A recording stops after
 five minutes.
 
-A compact gradient microphone responds to your voice. A moving ring indicates
-processing, sparkles indicate polishing, and a checkmark confirms completion.
+A floating audio waveform responds to your voice with cyan, blue, and violet
+gradient bars and a subtle glow on a fully transparent background. It stays still
+while you are silent, animates during processing, and shows a checkmark on completion.
 The indicator stays out of the way of your mouse and keyboard. Errors still show
 instructions, and macOS Reduce Motion is respected.
 

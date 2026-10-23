@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.4 · 2026-10-23
+
+- Replace the microphone orb with an audio waveform in cyan, blue, and violet gradients.
+- Remove the background entirely, leaving only the floating waveform.
+- Add a soft gradient glow that follows the waveform.
+- React to speech and settle during silence, without a looping recording animation.
+- Keep recording, processing, and polishing free of status text and microphone icons.
+- Preserve readable errors, clipboard recovery, and focus-safe automatic paste.
+- Respect Reduce Motion and stop animation when hidden.
+
 ## 0.6.3 · 2026-10-23
 
 - Replace the recording label and wide waveform with a compact animated activity icon.

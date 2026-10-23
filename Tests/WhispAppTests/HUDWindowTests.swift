@@ -12,6 +12,12 @@ import WhispCore
         #expect(!hud.window.canBecomeMain)
         #expect(hud.window.ignoresMouseEvents)
         #expect(hud.window.styleMask.contains(.nonactivatingPanel))
+        #expect(!hud.window.isOpaque)
+        #expect(!hud.window.hasShadow)
+        #expect(hud.window.backgroundColor.alphaComponent == 0)
+        hud.show(.listening)
+        let backings = hud.window.contentView?.subviews.compactMap { $0 as? NSVisualEffectView } ?? []
+        #expect(backings.allSatisfy { $0.isHidden })
     }
 
     @Test func errorsRemainReadableAndNextDictationIsCompact() {
@@ -23,7 +29,7 @@ import WhispCore
         #expect(hud.window.frame.width == 340)
         #expect(hud.window.title.contains(explanation))
         hud.show(.listening)
-        #expect(hud.window.frame.size == NSSize(width: 80, height: 80))
+        #expect(hud.window.frame.size == NSSize(width: 196, height: 76))
         #expect(hud.window.title == "Whisp: Listening")
         hud.show(.idle)
         #expect(!hud.window.isVisible)
@@ -37,7 +43,7 @@ import WhispCore
         #expect(hud.window.frame.width == 340)
         #expect(hud.window.title.contains("Microphone unavailable"))
         hud.showPractice(elapsed: 83)
-        #expect(hud.window.frame.width == 80)
+        #expect(hud.window.frame.width == 196)
         #expect(hud.window.title == "Whisp: Practice recording, 1:23")
     }
 }

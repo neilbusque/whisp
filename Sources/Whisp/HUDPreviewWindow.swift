@@ -7,11 +7,13 @@ final class HUDPreviewWindow: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private let hud: HUDWindow
     private let sample: VoiceActivityView
+    private let darkSample: VoiceActivityView
     private var levels: Task<Void, Never>?
 
     init(reducedMotion: Bool? = nil) {
         hud = HUDWindow(reducedMotion: reducedMotion)
-        sample = VoiceActivityView(frame: NSRect(x: 0, y: 0, width: 64, height: 64), reduceMotion: reducedMotion)
+        sample = VoiceActivityView(frame: NSRect(origin: .zero, size: VoiceActivityView.preferredSize), reduceMotion: reducedMotion)
+        darkSample = VoiceActivityView(frame: NSRect(origin: .zero, size: VoiceActivityView.preferredSize), reduceMotion: reducedMotion)
         super.init()
     }
 
@@ -23,23 +25,22 @@ final class HUDPreviewWindow: NSObject, NSApplicationDelegate {
         item.submenu = appMenu
         menu.addItem(item)
         NSApp.mainMenu = menu
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 300),
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 360),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Whisp animation preview"
         window.isReleasedWhenClosed = false
-        let heading = NSTextField(labelWithString: "Activity icon")
+        let heading = NSTextField(labelWithString: "Voice waveform")
         heading.font = .systemFont(ofSize: 22, weight: .semibold)
         let info = NSTextField(wrappingLabelWithString: "Preview each state. No microphone or network is used.")
-        let buttons = ["Listening", "Transcribing", "Polishing", "Done", "Error", "Practice", "Hide"].enumerated().map { index, title in
+        let buttons = ["Listening", "Transcribing", "Polishing", "Done", "Error", "Practice", "Hide", "Silence"].enumerated().map { index, title in
             let button = NSButton(title: title, target: self, action: #selector(selectState(_:)))
             button.tag = index
             return button
         }
-        let rows = [NSStackView(views: Array(buttons.prefix(3))), NSStackView(views: Array(buttons.suffix(4)))]
-        sample.translatesAutoresizingMaskIntoConstraints = false
-        sample.widthAnchor.constraint(equalToConstant: 64).isActive = true
-        sample.heightAnchor.constraint(equalToConstant: 64).isActive = true
-        let stack = NSStackView(views: [heading, info, sample] + rows)
+        let rows = [NSStackView(views: Array(buttons.prefix(3))), NSStackView(views: Array(buttons.suffix(5)))]
+        let backdrops = NSStackView(views: [backdrop(sample, dark: false), backdrop(darkSample, dark: true)])
+        backdrops.spacing = 16
+        let stack = NSStackView(views: [heading, info, backdrops] + rows)
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 20
@@ -58,10 +59,29 @@ final class HUDPreviewWindow: NSObject, NSApplicationDelegate {
 
     @objc private func selectState(_ sender: NSButton) { show(sender.tag) }
 
+    private func backdrop(_ wave: VoiceActivityView, dark: Bool) -> NSView {
+        let card = NSView()
+        card.wantsLayer = true
+        card.layer?.backgroundColor = (dark ? NSColor(srgbRed: 0.12, green: 0.14, blue: 0.19, alpha: 1)
+                                       : NSColor(srgbRed: 0.94, green: 0.95, blue: 0.97, alpha: 1)).cgColor
+        card.layer?.cornerRadius = 12
+        card.widthAnchor.constraint(equalToConstant: 208).isActive = true
+        card.heightAnchor.constraint(equalToConstant: 112).isActive = true
+        wave.frame = NSRect(x: 16, y: 38, width: 176, height: 56)
+        card.addSubview(wave)
+        let label = NSTextField(labelWithString: dark ? "Dark background" : "Light background")
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = dark ? NSColor.white.withAlphaComponent(0.8) : .secondaryLabelColor
+        label.frame = NSRect(x: 14, y: 12, width: 180, height: 14)
+        card.addSubview(label)
+        return card
+    }
+
     private func show(_ index: Int) {
         levels?.cancel()
-        let states: [VoiceActivityView.State] = [.listening, .transcribing, .polishing, .done, .error, .practice, .idle]
+        let states: [VoiceActivityView.State] = [.listening, .transcribing, .polishing, .done, .error, .practice, .idle, .listening]
         sample.setState(states.indices.contains(index) ? states[index] : .idle)
+        darkSample.setState(states.indices.contains(index) ? states[index] : .idle)
         switch index {
         case 0: hud.show(.listening)
         case 1: hud.show(.transcribing)
@@ -69,6 +89,11 @@ final class HUDPreviewWindow: NSObject, NSApplicationDelegate {
         case 3: hud.show(.done(""))
         case 4: hud.show(.error("Text copied. Press Command + V to paste."))
         case 5: hud.showPractice(elapsed: 83)
+        case 7:
+            hud.show(.listening)
+            hud.setLevel(0)
+            sample.pushLevel(0)
+            darkSample.pushLevel(0)
         default: hud.hide()
         }
         if index == 0 || index == 5 {
@@ -78,6 +103,7 @@ final class HUDPreviewWindow: NSObject, NSApplicationDelegate {
                     let level = Float(max(0, sin(phase) * sin(phase * 0.31))) * 0.65
                     self?.hud.setLevel(level)
                     self?.sample.pushLevel(level)
+                    self?.darkSample.pushLevel(level)
                     phase += 0.24
                     try? await Task.sleep(for: .milliseconds(60))
                 }
@@ -89,6 +115,7 @@ final class HUDPreviewWindow: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         levels?.cancel()
         sample.stopAnimating()
+        darkSample.stopAnimating()
         hud.hide()
     }
 }
