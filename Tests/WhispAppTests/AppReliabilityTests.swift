@@ -5,31 +5,6 @@ import WhispCore
 @testable import Whisp
 
 @Suite @MainActor struct AppReliabilityTests {
-    @Test func clipboardPreservesRichTextAndImages() {
-        let pb = NSPasteboard.withUniqueName()
-        defer { pb.releaseGlobally() }
-        let rich = Data("{\\rtf1 original}".utf8)
-        let image = Data([0x89, 0x50, 0x4e, 0x47])
-        let item = NSPasteboardItem()
-        item.setData(rich, forType: .rtf); item.setData(image, forType: .png)
-        item.setString("original", forType: .string)
-        pb.writeObjects([item])
-        let transaction = ClipboardTransaction(pasteboard: pb, text: "dictation")
-        #expect(pb.string(forType: .string) == "dictation")
-        transaction.restoreIfUnchanged()
-        #expect(pb.data(forType: .rtf) == rich)
-        #expect(pb.data(forType: .png) == image)
-        #expect(pb.string(forType: .string) == "original")
-    }
-    @Test func clipboardNeverOverwritesANewerCopy() {
-        let pb = NSPasteboard.withUniqueName()
-        defer { pb.releaseGlobally() }
-        pb.setString("before", forType: .string)
-        let transaction = ClipboardTransaction(pasteboard: pb, text: "dictation")
-        pb.clearContents(); pb.setString("user copied this", forType: .string)
-        transaction.restoreIfUnchanged()
-        #expect(pb.string(forType: .string) == "user copied this")
-    }
     @Test func rapidFnReleaseCannotLeaveRecordingStuck() {
         @MainActor final class Events { var values: [Bool] = [] }
         let events = Events()

@@ -54,7 +54,7 @@ import WhispCore
         #expect(pauses == [0.35])
     }
 
-    @Test func cancellationCannotRestoreClipboardBeforeConsumptionWindow() async {
+    @Test func cancellationCannotSkipInsertionVerificationWindow() async {
         let task = Task { @MainActor in
             let start = ProcessInfo.processInfo.systemUptime
             let verified = await PasteConsumption.wait(verify: nil, timeout: 0.03)

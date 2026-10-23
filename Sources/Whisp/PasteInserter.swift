@@ -2,8 +2,8 @@ import AppKit
 import ApplicationServices
 import WhispCore
 
-/// Clipboard and focus access is main-actor isolated. A late result never
-/// activates a different app or overwrites a newer clipboard item.
+/// Clipboard and focus access is main-actor isolated. A result is copied before
+/// safe insertion checks, and completion never replaces a newer clipboard item.
 @MainActor
 final class PasteInserter: TextInserting, SelectedTextReading, TextEditing {
     private struct FieldSnapshot {
@@ -35,6 +35,14 @@ final class PasteInserter: TextInserting, SelectedTextReading, TextEditing {
     private var initialValue: String?
     private var recentInsertion: RecentInsertion?
     private var preparedEdit: PreparedEdit?
+    private let pasteboard: NSPasteboard
+    private let isAccessibilityTrusted: () -> Bool
+
+    init(pasteboard: NSPasteboard = .general,
+         isAccessibilityTrusted: @escaping () -> Bool = { AXIsProcessTrusted() }) {
+        self.pasteboard = pasteboard
+        self.isAccessibilityTrusted = isAccessibilityTrusted
+    }
 
     func beginSession() {
         targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
@@ -49,25 +57,25 @@ final class PasteInserter: TextInserting, SelectedTextReading, TextEditing {
     func insert(_ text: String) async throws {
         guard !text.isEmpty else { return }
         try Task.checkCancellation()
-        guard AXIsProcessTrusted() else { throw failure("Enable Accessibility. Use Copy Last Dictation in Whisp.") }
+        try copyForRecovery(text)
+        guard isAccessibilityTrusted() else {
+            throw failure("Enable Accessibility for automatic paste. Dictation copied. Press Command+V to paste.")
+        }
         try checkOriginalFocus()
         try checkSelectionRange()
         if let initialSelection, !initialSelection.isEmpty, readSelection() != initialSelection {
-            throw failure("Selection changed. Use Copy Last Dictation in Whisp.")
+            throw failure("Selection changed. Dictation copied. Press Command+V to paste.")
         }
         if let selectedText, readSelection() != selectedText {
-            throw failure("Selection changed. Use Copy Last Dictation in Whisp.")
+            throw failure("Selection changed. Dictation copied. Press Command+V to paste.")
         }
         let before = fieldSnapshot()
         recentInsertion = nil
         preparedEdit = nil
-        let transaction = ClipboardTransaction(text: text)
-        do { try postKey(keyCode: 9, command: true) }
-        catch { transaction.restoreIfUnchanged(); throw error }
+        try postKey(keyCode: 9, command: true)
         // Once a key event is posted, let the application consume it even if
-        // this task is cancelled. Restore all clipboard types only while owned.
+        // this task is cancelled. The text stays copied for manual recovery.
         await waitForConsumption(of: text, replacing: before?.range, in: before)
-        transaction.restoreIfUnchanged()
         if let before {
             recordInsertion(text, replacing: before.range, in: before)
         }
@@ -75,7 +83,7 @@ final class PasteInserter: TextInserting, SelectedTextReading, TextEditing {
 
     func readSelectedText() async throws -> String? {
         try Task.checkCancellation()
-        guard AXIsProcessTrusted() else { throw failure("Enable Accessibility to rewrite selected text.") }
+        guard isAccessibilityTrusted() else { throw failure("Enable Accessibility to rewrite selected text.") }
         guard targetPID != nil, targetElement != nil else {
             throw failure("Select the text and try again.")
         }
@@ -94,7 +102,7 @@ final class PasteInserter: TextInserting, SelectedTextReading, TextEditing {
     func prepareEdit(preferRecent: Bool) async throws -> TextEditTarget? {
         try Task.checkCancellation()
         preparedEdit = nil
-        guard AXIsProcessTrusted() else { throw failure("Enable Accessibility to edit text.") }
+        guard isAccessibilityTrusted() else { throw failure("Enable Accessibility to edit text.") }
         try checkOriginalFocus()
         // Edits need stronger evidence than ordinary paste: the complete value,
         // selection and cursor must still match the start of this dictation.
@@ -120,14 +128,16 @@ final class PasteInserter: TextInserting, SelectedTextReading, TextEditing {
 
     func replace(_ target: TextEditTarget, with text: String) async throws {
         try Task.checkCancellation()
-        guard AXIsProcessTrusted() else { throw failure("Enable Accessibility to edit text.") }
+        try copyForRecovery(text)
+        let recovery = text.isEmpty ? "" : " Dictation copied. Press Command+V to paste."
+        guard isAccessibilityTrusted() else { throw failure("Enable Accessibility to edit text." + recovery) }
         guard let prepared = preparedEdit, prepared.target == target else {
-            throw failure("The edit expired. Select the text and try again.")
+            throw failure("The edit expired. Select the text and try again." + recovery)
         }
         guard let current = fieldSnapshot(), sameSnapshot(current, prepared.snapshot),
               prepared.range.text(in: current.value) == target.text else {
             preparedEdit = nil
-            throw failure("Text or cursor changed. Select the text and try again.")
+            throw failure("Text or cursor changed. Select the text and try again." + recovery)
         }
         // Consume the token before the first mutation. A delayed or retried AI
         // response can never apply this edit twice.
@@ -138,20 +148,24 @@ final class PasteInserter: TextInserting, SelectedTextReading, TextEditing {
               CFEqual(selected.element, current.element), selected.value == current.value,
               selected.range == prepared.range, selected.selection == target.text else {
             restoreSelection(current)
-            throw failure("Could not select that text safely. Select it and try again.")
+            throw failure("Could not select that text safely. Select it and try again." + recovery)
         }
         recentInsertion = nil
-        let transaction = text.isEmpty ? nil : ClipboardTransaction(text: text)
         do { try postKey(keyCode: text.isEmpty ? 51 : 9, command: !text.isEmpty) }
         catch {
-            transaction?.restoreIfUnchanged()
             restoreSelection(current)
             throw error
         }
         await waitForConsumption(of: text, replacing: prepared.range, in: current)
-        transaction?.restoreIfUnchanged()
         guard recordInsertion(text, replacing: prepared.range, in: current) else {
-            throw failure("Could not verify the edit. Check the text before trying again.")
+            let hint = text.isEmpty ? "" : " Use Command+V or Copy Last Dictation if needed."
+            throw failure("Could not verify the edit. Check the text before trying again." + hint)
+        }
+    }
+
+    private func copyForRecovery(_ text: String) throws {
+        guard ClipboardTransaction.publish(text, to: pasteboard) else {
+            throw failure("Could not copy the dictation. Use Copy Last Dictation in Whisp.")
         }
     }
 
@@ -204,11 +218,11 @@ final class PasteInserter: TextInserting, SelectedTextReading, TextEditing {
 
     private func checkOriginalFocus() throws {
         guard targetPID == nil || NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else {
-            throw failure("App changed. Use Copy Last Dictation in Whisp.")
+            throw failure("App changed. Use Command+V or Copy Last Dictation.")
         }
         if let targetElement {
             guard let focused = focusedElement(), CFEqual(targetElement, focused) else {
-                throw failure("Text field changed. Use Copy Last Dictation in Whisp.")
+                throw failure("Text field changed. Use Command+V or Copy Last Dictation.")
             }
         }
     }
@@ -234,7 +248,7 @@ final class PasteInserter: TextInserting, SelectedTextReading, TextEditing {
         if let before = initialRange {
             guard let focused = focusedElement(), let current = readSelectionRange(of: focused),
                   before.location == current.location, before.length == current.length else {
-                throw failure("Cursor moved. Use Copy Last Dictation in Whisp.")
+                throw failure("Cursor moved. Use Command+V or Copy Last Dictation.")
             }
         }
     }
@@ -287,13 +301,12 @@ final class PasteInserter: TextInserting, SelectedTextReading, TextEditing {
     }
 
     private func postKey(keyCode: CGKeyCode, command: Bool) throws {
-        guard let source = CGEventSource(stateID: .combinedSessionState),
-              let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) else {
-            throw failure("Could not paste. Use Copy Last Dictation in Whisp.")
+        guard let keypress = SyntheticKeypress(keyCode: keyCode, command: command,
+              physicalFlags: CGEventSource.flagsState(.hidSystemState)) else {
+            let hint = command ? " Use Command+V or Copy Last Dictation." : " Try the deletion again."
+            throw failure("Could not send the edit." + hint)
         }
-        down.flags = command ? .maskCommand : []; up.flags = command ? .maskCommand : []
-        down.post(tap: .cgAnnotatedSessionEventTap); up.post(tap: .cgAnnotatedSessionEventTap)
+        keypress.post()
     }
 
     private func failure(_ text: String) -> NSError {
@@ -301,8 +314,8 @@ final class PasteInserter: TextInserting, SelectedTextReading, TextEditing {
     }
 }
 
-/// Only an exact document and caret acknowledgement can shorten the clipboard
-/// lifetime. Cancellation after posting Cmd-V must not shorten this wait.
+/// An exact document and caret acknowledgement can shorten insertion tracking.
+/// Cancellation after posting Cmd-V must not skip the verification window.
 @MainActor
 enum PasteConsumption {
     struct ExpectedChange {

@@ -16,6 +16,7 @@ private func eventTapCallback(
         MainActor.assumeIsolated { monitor.reenable() }
         return Unmanaged.passUnretained(event)
     }
+    guard !SyntheticKeypress.isWhispEvent(event) else { return Unmanaged.passUnretained(event) }
     let isFn = event.flags.contains(.maskSecondaryFn)
     MainActor.assumeIsolated { monitor.setFn(isFn) }
     return Unmanaged.passUnretained(event)
@@ -61,10 +62,12 @@ final class HotkeyMonitor {
 
         // Detector 1: NSEvent flag monitors (catch Fn via .function).
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged]) { [weak self] e in
+            guard !SyntheticKeypress.isWhispEvent(e.cgEvent) else { return }
             let isFn = e.modifierFlags.contains(.function)
             MainActor.assumeIsolated { self?.setFn(isFn) }
         }
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged]) { [weak self] e in
+            guard !SyntheticKeypress.isWhispEvent(e.cgEvent) else { return e }
             let isFn = e.modifierFlags.contains(.function)
             MainActor.assumeIsolated { self?.setFn(isFn) }
             return e

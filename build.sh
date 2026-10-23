@@ -24,10 +24,11 @@ fi
 # Sign with the self-signed identity if available, else ad-hoc.
 IDENTITY="Whisp Signing"
 KEYCHAIN="$HOME/Library/Keychains/whisp-signing.keychain-db"
-if [ -n "${WHISP_SIGNING_IDENTITY:-}" ]; then
+SIGNING_IDENTITY="${WHISP_SIGNING_IDENTITY:-$(git config --get whisp.signingIdentity || true)}"
+if [ -n "$SIGNING_IDENTITY" ]; then
   echo "› codesign with configured identity"
   codesign --force --deep --options runtime --entitlements Resources/Whisp.entitlements \
-    --sign "$WHISP_SIGNING_IDENTITY" "$APP"
+    --sign "$SIGNING_IDENTITY" "$APP"
 elif security find-identity -v -p codesigning "$KEYCHAIN" 2>/dev/null | grep -q "$IDENTITY"; then
   echo "› codesign with '$IDENTITY'"
   codesign --force --deep --options runtime --entitlements Resources/Whisp.entitlements \

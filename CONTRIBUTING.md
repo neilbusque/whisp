@@ -21,6 +21,12 @@ whisper.cpp source. OpenAI features require your own API key, but unit tests use
 fake providers and do not need one. Do not put credentials in source files or test
 fixtures.
 
+For repeated local installs, use a signing identity you already own. Set
+`WHISP_SIGNING_IDENTITY` for one build, or save the certificate name or SHA-1 with
+`git config --local whisp.signingIdentity "Your signing identity"`. This setting
+stays in your local checkout. Reusing an identity helps keep macOS permissions
+consistent; changing it can require approving the app again.
+
 ## Make and verify a change
 
 1. Create a branch and keep the change focused.
@@ -64,7 +70,9 @@ refreshing Microphone or Accessibility permission in System Settings.
 - A speculative result is reusable only for the exact final prompt and active session.
 - Follow-up edits must verify the target app, field, document, and cursor or selection.
 - Failed or incomplete required rewrites must leave the target unchanged.
-- Clipboard restoration must preserve all types and respect newer user copies.
+- Keep completed dictation on the clipboard even when automatic insertion fails.
+  Never restore the older clipboard afterward or overwrite a newer user copy.
+  Deletion and cancelled dictation must not clear the clipboard.
 - Logs and tests must not expose credentials or personal dictation.
 
 ## Issues and security

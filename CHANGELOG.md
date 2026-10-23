@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.2 · 2026-10-23
+
+- Keep completed dictation and rewritten text on the clipboard for Command + V recovery,
+  including when automatic insertion is blocked by a changed field or permissions.
+- Preserve newer user copies and leave the clipboard alone for deletion or cancellation.
+- Isolate synthetic paste shortcuts from the normal input state, release the simulated
+  Command modifier, and allow physical mouse and keyboard input throughout.
+- Ignore Whisp's own synthetic events in the Fn monitor.
+
 ## 0.6.1 · 2026-10-23
 
 - Publish Whisp as open source under the MIT license, with third-party notices.

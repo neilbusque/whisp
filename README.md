@@ -6,6 +6,10 @@ Whisp is an open-source macOS dictation app with local speech recognition, optio
 OpenAI streaming, automatic writing polish, and voice commands that edit text in place.
 It lives in your menu bar and pastes into the focused text field.
 
+Finished dictation also stays on your clipboard. If an app misses the automatic
+paste or its text disappears, press **Command + V** to recover it. Copying something
+else replaces that clipboard copy; **Copy Last Dictation** remains available in Whisp.
+
 - **Fast dictation:** stream speech to OpenAI while you speak, or transcribe on your Mac with whisper.cpp.
 - **Automatic polish:** remove fillers, fix grammar, and tighten rambling without changing your meaning.
 - **Voice edits:** change tone, shorten a draft, remove a selected phrase, or correct yourself mid-sentence.
