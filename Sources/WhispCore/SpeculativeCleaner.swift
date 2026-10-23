@@ -23,6 +23,9 @@ public actor SpeculativeCleaner: Cleaning {
     private var cached: (messages: [ChatMessage], text: String)?
     private var timer: Task<Void, Never>?
 
+    // Read-only observation for deterministic coordination with preview work.
+    var hasActivePreview: Bool { active != nil }
+
     public init(cleaner: Cleaning, debounce: Duration = .milliseconds(250), limit: Int = 6,
                 onReuse: @escaping @Sendable () -> Void = {}) {
         self.cleaner = cleaner
