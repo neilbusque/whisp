@@ -72,6 +72,15 @@ Keep a text field focused, hold **Fn / Globe**, speak, then release. Wait for th
 insertion to finish before starting the next recording. A recording stops after
 five minutes.
 
+A compact gradient microphone responds to your voice. A moving ring indicates
+processing, sparkles indicate polishing, and a checkmark confirms completion.
+The indicator stays out of the way of your mouse and keyboard. Errors still show
+instructions, and macOS Reduce Motion is respected.
+
+To preview the indicator without using the microphone or network, run
+`Whisp.app/Contents/MacOS/Whisp --hud-preview --no-hotkeys` after building.
+Add `--reduce-motion` to preview its static appearance.
+
 | Say | Result |
 | --- | --- |
 | “Make this better: [your message]” | Rewrites the message you just dictated. |

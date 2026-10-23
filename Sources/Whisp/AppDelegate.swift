@@ -192,10 +192,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = PracticeController(recorder: recorder, transcriber: model,
                                 cleaner: OpenAICleaner(apiKey: config.openaiKey, model: config.textModel), config: config,
                                 store: sessionStore, prompts: promptStore)
-        controller.onStatus = { [weak self] text, done in
+        controller.onStatus = { [weak self] text, done, error in
             MainActor.assumeIsolated {
                 guard let self, !self.recording, !self.processing else { return }
-                self.hud.showPracticeStatus(text, done: done)
+                self.hud.showPracticeStatus(text, done: done, error: error)
                 self.workspace.status = done ? "Ready" : text
             }
         }
@@ -233,7 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 learning.error = error.localizedDescription
                 workspace.practiceError = error.localizedDescription
-                hud.showPracticeStatus("Local practice model unavailable", done: true)
+                hud.showPracticeStatus("Local practice model unavailable", done: true, error: true)
             }
         }
     }
@@ -419,7 +419,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // isn't (see the mirror-image guard in `startRecording()`).
         if practice.isRecording != true, startingRecording || recording || processing || loadingModel {
             Diag.log("practice: ignored, dictation is in progress")
-            hud.showPracticeStatus("Finish dictating first", done: true)
+            hud.showPracticeStatus("Finish dictating first", done: true, error: true)
             return
         }
         let wasRecording = practice.isRecording

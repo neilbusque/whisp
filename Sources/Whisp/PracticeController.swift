@@ -32,10 +32,15 @@ final class PracticeController: ObservableObject {
     var sessionsChanged: () -> Void = {}
     var onRecordingStopped: () -> Void = {}
     var onBackgroundWorkFinished: () -> Void = {}
-    /// Fired with a HUD-facing status string and whether it's a terminal
+    /// Fired with a HUD-facing status string, whether it's a terminal
     /// (resting) state — the HUD auto-hides on terminal statuses and stays up
-    /// through in-flight/progress ones.
-    var onStatus: (String, Bool) -> Void = { _, _ in }
+    /// through in-flight/progress ones — and whether it describes an error.
+    /// Errors remain readable when ordinary status updates use only an icon.
+    var onStatus: (String, Bool, Bool) -> Void = { _, _, _ in }
+
+    private func reportStatus(_ text: String, done: Bool = false, error: Bool = false) {
+        onStatus(text, done, error)
+    }
 
     init(recorder: AudioRecorder, transcriber: WhisperTranscriber, cleaner: Cleaning,
          config: WhispConfig, store: PracticeStore, prompts: PromptStore) {
@@ -79,7 +84,7 @@ final class PracticeController: ObservableObject {
             Diag.log("practice: recording started \(sessionID)")
         } catch {
             Diag.log("practice: failed to start recording — \(error.localizedDescription)")
-            onStatus("Mic unavailable", true)
+            reportStatus("Mic unavailable", done: true, error: true)
         }
     }
 
@@ -91,8 +96,8 @@ final class PracticeController: ObservableObject {
         let samples: [Float]
         let envelope: [Float]
         do { (samples, envelope) = try await recorder.stopWithEnvelope() }
-        catch { onStatus("Audio conversion failed", true); return }
-        guard !samples.isEmpty else { onStatus("No audio captured", true); return }
+        catch { reportStatus("Audio conversion failed", done: true, error: true); return }
+        guard !samples.isEmpty else { reportStatus("No audio captured", done: true, error: true); return }
         let duration = Double(samples.count) / 16_000
         let filename = "\(sessionID.uuidString).wav"
         let prompt = currentPrompt
@@ -103,7 +108,7 @@ final class PracticeController: ObservableObject {
             try Paths.writeRecording(samples: samples, filename: filename)
         } catch {
             Diag.log("practice: FAILED to write \(filename) — \(error.localizedDescription)")
-            onStatus("Could not save recording", true)
+            reportStatus("Could not save recording", done: true, error: true)
             return
         }
 
@@ -115,7 +120,7 @@ final class PracticeController: ObservableObject {
         store.append(session)
         persist()
         sessionsChanged()
-        onStatus("Saved, transcribing…", false)
+        reportStatus("Saved, transcribing…")
 
         backgroundWork += 1
         Task {
@@ -135,7 +140,7 @@ final class PracticeController: ObservableObject {
             let segments = try await transcriber.transcribeSegments(chunks) { pct in
                 // transcribeSegments is nonisolated and calls this from the
                 // cooperative pool, NOT the main actor — assumeIsolated would trap.
-                Task { @MainActor in self.onStatus("Transcribing \(Int(pct * 100))%", false) }
+                Task { @MainActor in self.reportStatus("Transcribing \(Int(pct * 100))%") }
             }
             let transcript = segments.map(\.text).joined()
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -149,11 +154,11 @@ final class PracticeController: ObservableObject {
                 silenceThreshold: Float(config.silenceRMSThreshold),
                 minPauseSec: config.pauseThresholdSec)
             updated.status = .ready
-            onStatus("Practice session ready", true)
+            reportStatus("Practice session ready", done: true)
         } catch {
             updated.status = .failed(error.localizedDescription)
             Diag.log("practice: transcription failed — \(error.localizedDescription)")
-            onStatus("Transcription failed", true)
+            reportStatus("Transcription failed", done: true, error: true)
         }
 
         // update() ignores unknown ids, so a session deleted while this ran is
@@ -170,16 +175,16 @@ final class PracticeController: ObservableObject {
               let transcript = s.transcript, let metrics = s.metrics else { return }
         backgroundWork += 1
         defer { backgroundWork -= 1; onBackgroundWorkFinished() }
-        onStatus("Asking the coach…", false)
+        reportStatus("Asking the coach…")
         do {
             let messages = TranscriptCleaner.coachPrompt(
                 transcript: transcript, promptTitle: s.promptTitle, metrics: metrics)
             s.coachFeedback = try await cleaner.complete(messages)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            onStatus("Coach feedback ready", true)
+            reportStatus("Coach feedback ready", done: true)
         } catch {
             s.coachFeedback = "Coach unavailable: \(error.localizedDescription)"
-            onStatus("Coach unavailable", true)
+            reportStatus("Coach unavailable", done: true, error: true)
         }
         store.update(s)
         persist()

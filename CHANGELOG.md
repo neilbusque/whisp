@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.3 · 2026-10-23
+
+- Replace the recording label and wide waveform with a compact animated activity icon.
+- Add a blue, cyan, and violet gradient, voice-responsive motion, and distinct
+  listening, processing, polishing, practice, and success states.
+- Keep actionable errors readable and distinguish practice failures from success.
+- Respect Reduce Motion, stop animations when hidden, and keep the indicator
+  click-through and unable to take keyboard focus.
+
 ## 0.6.2 · 2026-10-23
 
 - Keep completed dictation and rewritten text on the clipboard for Command + V recovery,

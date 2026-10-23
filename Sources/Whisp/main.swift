@@ -67,6 +67,13 @@ if args.contains("--login-status") {
 }
 
 let app = NSApplication.shared
+if args.contains("--hud-preview"), args.contains("--no-hotkeys") {
+    let preview = HUDPreviewWindow(reducedMotion: args.contains("--reduce-motion") ? true : nil)
+    app.delegate = preview
+    app.setActivationPolicy(.regular)
+    withExtendedLifetime(preview) { app.run() }
+    exit(0)
+}
 if args.contains("--voice-edit-check"), args.contains("--no-hotkeys"), args.contains("--data-dir") {
     let check = VoiceEditCheckWindow()
     app.delegate = check

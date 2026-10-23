@@ -1,203 +1,175 @@
 import AppKit
 import WhispCore
 
-/// A small, premium glass pill that shows what Whisp is doing. It never takes
-/// focus (so you keep typing into your own app). Built on real macOS vibrancy
-/// with a translucent frosted look and the live waveform inline on the right.
+/// A floating activity icon. It cannot activate, take keyboard focus, or catch
+/// mouse input. Text appears only when there is something the user must read.
 @MainActor
-final class HUDWindow {
-    private let window: NSWindow
-    private let glyph = NSImageView()
-    private let label = NSTextField(labelWithString: "")
-    private let wave = WaveformView(frame: .zero)
+final class HUDWindow: NSObject {
+    private final class Panel: NSPanel {
+        override var canBecomeKey: Bool { false }
+        override var canBecomeMain: Bool { false }
+    }
+
+    let window: NSPanel
+    private let activity: VoiceActivityView
+    private let detail = NSTextField(wrappingLabelWithString: "")
+    private let message = NSVisualEffectView()
     private var hideWork: Task<Void, Never>?
+    private var presentation = 0
+    private let reducedMotion: () -> Bool
 
-    private static let cardWidth: CGFloat = 360
-    private static let cardHeight: CGFloat = 56
-    private static let radius: CGFloat = 28
-    // Keep foreground content crisp; the material supplies translucency.
-    private static let shownAlpha: CGFloat = 1
-
-    init() {
-        window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: Self.cardWidth, height: Self.cardHeight),
-            styleMask: [.borderless], backing: .buffered, defer: false)
+    init(reducedMotion: Bool? = nil) {
+        self.reducedMotion = { reducedMotion ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+        activity = VoiceActivityView(frame: NSRect(x: 0, y: 0, width: 64, height: 64),
+                                     reduceMotion: reducedMotion)
+        window = Panel(contentRect: NSRect(x: 0, y: 0, width: 80, height: 80),
+                       styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        super.init()
         window.level = .floating
         window.isOpaque = false
         window.backgroundColor = .clear
         window.appearance = NSAppearance(named: .darkAqua)
-        window.hasShadow = true
+        window.hasShadow = false
         window.ignoresMouseEvents = true
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-
-        // Frosted glass base.
-        let bounds = NSRect(x: 0, y: 0, width: Self.cardWidth, height: Self.cardHeight)
-        let blur = NSVisualEffectView(frame: bounds)
-        blur.material = .hudWindow
-        blur.blendingMode = .behindWindow
-        blur.state = .active
-        blur.appearance = NSAppearance(named: .darkAqua)
-        // Core Animation cornerRadius alone does not mask the WindowServer's
-        // behind-window material or its shadow. Give AppKit the actual alpha
-        // silhouette so everything outside the pill stays transparent.
-        let radius = Self.radius
-        blur.maskImage = NSImage(size: bounds.size, flipped: false) { rect in
-            NSColor.white.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
-            return true
-        }
-        blur.wantsLayer = true
-        blur.layer?.cornerRadius = Self.radius
-        blur.layer?.cornerCurve = .continuous
-        blur.layer?.masksToBounds = true
-        blur.layer?.borderWidth = 0.5
-        blur.layer?.borderColor = NSColor(white: 1, alpha: 0.10).cgColor
-        window.contentView = blur
-
-        // Neutral charcoal keeps the live status legible over any application.
-        let glass = NSView(frame: NSRect(x: 0, y: 0, width: Self.cardWidth, height: Self.cardHeight))
-        glass.wantsLayer = true
-        glass.layer?.backgroundColor = Theme.ink.withAlphaComponent(0.84).cgColor
-        glass.autoresizingMask = [.width, .height]
-        blur.addSubview(glass)
-
-        glyph.translatesAutoresizingMaskIntoConstraints = false
-        glyph.imageScaling = .scaleProportionallyUpOrDown
-        glyph.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
-        glyph.setContentHuggingPriority(.required, for: .horizontal)
-
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.textColor = Theme.mist
-        label.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        label.backgroundColor = .clear
-        label.drawsBackground = false
-        label.isBezeled = false
-        label.lineBreakMode = .byWordWrapping
-        label.maximumNumberOfLines = 2
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        wave.translatesAutoresizingMaskIntoConstraints = false
-        wave.setContentHuggingPriority(.required, for: .horizontal)
-
-        blur.addSubview(glyph)
-        blur.addSubview(label)
-        blur.addSubview(wave)
-
-        NSLayoutConstraint.activate([
-            glyph.leadingAnchor.constraint(equalTo: blur.leadingAnchor, constant: 16),
-            glyph.centerYAnchor.constraint(equalTo: blur.centerYAnchor),
-            glyph.widthAnchor.constraint(equalToConstant: 18),
-            glyph.heightAnchor.constraint(equalToConstant: 18),
-
-            label.leadingAnchor.constraint(equalTo: glyph.trailingAnchor, constant: 9),
-            label.centerYAnchor.constraint(equalTo: blur.centerYAnchor),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: wave.leadingAnchor, constant: -10),
-
-            wave.trailingAnchor.constraint(equalTo: blur.trailingAnchor, constant: -16),
-            wave.centerYAnchor.constraint(equalTo: blur.centerYAnchor),
-            wave.widthAnchor.constraint(equalToConstant: 92),
-            wave.heightAnchor.constraint(equalToConstant: 20),
-        ])
-
-        positionBottomCenter()
+        window.hidesOnDeactivate = false
+        window.isReleasedWhenClosed = false
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        let content = NSView(frame: window.frame)
+        window.contentView = content
+        content.addSubview(activity)
+        message.material = .hudWindow
+        message.blendingMode = .behindWindow
+        message.state = .active
+        message.wantsLayer = true
+        message.layer?.cornerRadius = 14
+        message.layer?.masksToBounds = true
+        message.layer?.borderWidth = 0.5
+        message.layer?.borderColor = NSColor(white: 1, alpha: 0.16).cgColor
+        content.addSubview(message)
+        detail.font = .systemFont(ofSize: 12, weight: .medium)
+        detail.textColor = .white
+        detail.maximumNumberOfLines = 0
+        message.addSubview(detail)
+        message.isHidden = true
+        activity.setAccessibilityElement(true)
+        activity.setAccessibilityRole(.image)
+        NSWorkspace.shared.notificationCenter.addObserver(self,
+            selector: #selector(motionPreferenceChanged),
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
     }
 
-    private func positionBottomCenter() {
-        guard let screen = NSScreen.main else { return }
-        let f = screen.visibleFrame
-        window.setFrameOrigin(NSPoint(x: f.midX - Self.cardWidth / 2, y: f.minY + 84))
+    deinit {
+        hideWork?.cancel()
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
-    /// Feeds the live waveform while listening; ignored in other states.
-    func setLevel(_ level: Float) {
-        wave.pushLevel(level)
-    }
+    func setLevel(_ level: Float) { activity.pushLevel(level) }
 
     func show(_ status: PipelineStatus) {
-        hideWork?.cancel()
         switch status {
-        case .idle:
-            wave.setMode(.idle)
-            window.orderOut(nil)
-            return
-        case .listening:
-            setGlyph("mic.fill", Theme.iris)
-            label.stringValue = "Listening"
-            wave.setMode(.live)
-        case .transcribing:
-            setGlyph("waveform", Theme.aqua)
-            label.stringValue = "Transcribing"
-            wave.setMode(.shimmer)
-        case .polishing:
-            setGlyph("sparkles", Theme.iris)
-            label.stringValue = "Polishing"
-            wave.setMode(.shimmer)
+        case .idle: hide()
+        case .listening: present(.listening, description: "Listening")
+        case .transcribing: present(.transcribing, description: "Transcribing")
+        case .polishing: present(.polishing, description: "Polishing")
         case .done:
-            setGlyph("checkmark.circle.fill", Theme.mint)
-            label.stringValue = "Done"
-            wave.setMode(.idle)
-            scheduleHide()
-        case .error(let m):
-            setGlyph("exclamationmark.triangle.fill", Theme.amber)
-            label.stringValue = m
-            wave.setMode(.idle)
-            scheduleHide(after: 2.2)
+            present(.done, description: "Done")
+            scheduleHide(after: 1.0)
+        case .error(let text):
+            present(.error, description: text, message: text)
+            scheduleHide(after: 4.0)
         }
-        positionBottomCenter()
-        present()
     }
 
-    /// Practice recording: amber glyph and an elapsed timer, so there is never
-    /// a doubt about which mode is capturing. The live waveform is fed by the
-    /// existing `setLevel(_:)`, same as dictation.
     func showPractice(elapsed: TimeInterval) {
+        let seconds = max(0, Int(elapsed))
+        let time = String(format: "%d:%02d", seconds / 60, seconds % 60)
+        present(.practice, description: "Practice recording, \(time)")
+    }
+
+    func showPracticeStatus(_ text: String, done: Bool = false, error: Bool = false) {
+        present(error ? .error : done ? .done : .transcribing, description: text,
+                message: error ? text : nil)
+        if done || error { scheduleHide(after: error ? 4.0 : 1.6) }
+    }
+
+    private func present(_ state: VoiceActivityView.State, description: String, message text: String? = nil) {
         hideWork?.cancel()
-        setGlyph("record.circle", Theme.amber)
-        let mins = Int(elapsed) / 60
-        let secs = Int(elapsed) % 60
-        label.stringValue = String(format: "Practice  %d:%02d", mins, secs)
-        wave.setMode(.live)
-        positionBottomCenter()
-        present()
-    }
-
-    /// Post-recording practice status ("Saved, transcribing…", "Transcribing 40%").
-    func showPracticeStatus(_ text: String, done: Bool = false) {
-        hideWork?.cancel()
-        setGlyph(done ? "checkmark.circle.fill" : "waveform", done ? Theme.mint : Theme.aqua)
-        label.stringValue = text
-        wave.setMode(done ? .idle : .shimmer)
-        positionBottomCenter()
-        present()
-        if done { scheduleHide(after: 1.6) }
-    }
-
-    private func setGlyph(_ symbol: String, _ tint: NSColor) {
-        glyph.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        glyph.contentTintColor = tint
-    }
-
-    /// Order front without stealing focus, with a quick fade unless Reduce Motion is on.
-    private func present() {
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || window.isVisible {
-            window.alphaValue = Self.shownAlpha
-            window.orderFrontRegardless()
+        presentation += 1
+        activity.setState(state)
+        activity.setAccessibilityLabel(description)
+        window.title = "Whisp: \(description)"
+        layout(message: text)
+        guard !window.isVisible else {
+            // Supersede a completion fade if another recording starts during it.
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = reducedMotion() ? 0 : 0.12
+                window.animator().alphaValue = 1
+            }
             return
         }
-        window.alphaValue = 0
+        window.alphaValue = reducedMotion() ? 1 : 0
         window.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.16
-            window.animator().alphaValue = Self.shownAlpha
+        guard !reducedMotion() else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.16
+            window.animator().alphaValue = 1
         }
     }
 
-    private func scheduleHide(after seconds: Double = 1.2) {
+    private func layout(message text: String?) {
+        let width: CGFloat = text == nil ? 80 : 340
+        var height: CGFloat = 80
+        if let text {
+            detail.stringValue = text
+            let textWidth: CGFloat = width - 104
+            let bounds = (text as NSString).boundingRect(
+                with: NSSize(width: textWidth, height: 1000),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [.font: detail.font!])
+            height = max(80, ceil(bounds.height) + 32)
+            message.frame = NSRect(x: 72, y: 8, width: width - 80, height: height - 16)
+            detail.frame = NSRect(x: 12, y: 8, width: textWidth, height: height - 32)
+            let size = message.bounds.size
+            message.maskImage = NSImage(size: size, flipped: false) { rect in
+                NSColor.white.setFill()
+                NSBezierPath(roundedRect: rect, xRadius: 14, yRadius: 14).fill()
+                return true
+            }
+        }
+        message.isHidden = text == nil
+        activity.frame = NSRect(x: 8, y: (height - 64) / 2, width: 64, height: 64)
+        let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        window.setFrame(NSRect(x: visible.midX - width / 2, y: visible.minY + 72,
+                               width: width, height: height), display: true)
+    }
+
+    /// Cancels all work immediately, including compositor animations when hidden.
+    func hide() {
         hideWork?.cancel()
+        hideWork = nil
+        presentation += 1
+        activity.setState(.idle)
+        activity.stopAnimating()
+        window.orderOut(nil)
+        window.alphaValue = 1
+    }
+
+    private func scheduleHide(after seconds: Double) {
+        hideWork?.cancel()
+        let token = presentation
         hideWork = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
-            guard !Task.isCancelled else { return }
-            self?.window.orderOut(nil)
+            guard !Task.isCancelled, let self, token == self.presentation else { return }
+            if self.reducedMotion() { self.hide(); return }
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.18
+                self.window.animator().alphaValue = 0
+            }, completionHandler: nil)
+            try? await Task.sleep(for: .milliseconds(190))
+            guard !Task.isCancelled, token == self.presentation else { return }
+            self.hide()
         }
     }
+
+    @objc private func motionPreferenceChanged() { activity.refreshMotionPreference() }
 }
