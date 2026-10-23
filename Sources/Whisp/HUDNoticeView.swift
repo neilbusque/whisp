@@ -5,20 +5,21 @@ import QuartzCore
 /// system appearance. Speech activity is drawn separately from these notices.
 @MainActor
 final class HUDNoticeView: NSView {
+    static let preferredWidth: CGFloat = 300
     private let icon = NSImageView()
     private let heading = NSTextField(wrappingLabelWithString: "")
     private let detail = NSTextField(wrappingLabelWithString: "")
-    private let padding: CGFloat = 16
-    private let iconSize: CGFloat = 15
-    private let iconGap: CGFloat = 10
-    private let textGap: CGFloat = 4
+    private let padding: CGFloat = 12
+    private let iconSize: CGFloat = 13
+    private let iconGap: CGFloat = 8
+    private let textGap: CGFloat = 3
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         appearance = NSAppearance(named: .darkAqua)
         wantsLayer = true
         layer?.backgroundColor = Self.color(0x1E2026).cgColor
-        layer?.cornerRadius = 16
+        layer?.cornerRadius = 14
         layer?.cornerCurve = .continuous
         layer?.borderColor = Self.color(0xCFE2FF, alpha: 0.17).cgColor
         layer?.borderWidth = 0.75
@@ -29,9 +30,9 @@ final class HUDNoticeView: NSView {
         icon.setAccessibilityElement(false)
         addSubview(icon)
 
-        configure(heading, identifier: "notice.heading", size: 13, weight: .semibold,
+        configure(heading, identifier: "notice.heading", size: 12, weight: .semibold,
                   color: Self.color(0xEDEEF2))
-        configure(detail, identifier: "notice.detail", size: 12, weight: .regular,
+        configure(detail, identifier: "notice.detail", size: 11.5, weight: .regular,
                   color: Self.color(0xB2B3BA))
         setAccessibilityElement(true)
         setAccessibilityRole(.staticText)
@@ -60,7 +61,7 @@ final class HUDNoticeView: NSView {
         let headingHeight = measuredHeight(of: heading, width: textWidth)
         let detailHeight = detail.isHidden ? 0 : measuredHeight(of: detail, width: textWidth)
         let contentHeight = headingHeight + (detail.isHidden ? 0 : textGap + detailHeight)
-        return NSSize(width: width, height: max(68, ceil(contentHeight + padding * 2)))
+        return NSSize(width: width, height: max(56, ceil(contentHeight + padding * 2)))
     }
 
     override func layout() {

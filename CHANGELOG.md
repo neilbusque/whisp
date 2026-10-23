@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.6 · 2026-10-23
+
+- Make dark notifications smaller with tighter padding and typography.
+- Dismiss short notifications after two seconds and longer guidance after 2.8 seconds.
+- Use a quicker fade while preserving the recording indicator and recovery instructions.
+
 ## 0.6.5 · 2026-10-23
 
 - Present dictation guidance in one compact charcoal notification matching Copilot and Replay Coach.

@@ -99,8 +99,9 @@ final class HUDPreviewWindow: NSObject, NSApplicationDelegate {
         notice.isHidden = message == nil
         if let message {
             notice.setMessage(message)
-            let size = notice.sizeThatFits(width: 320)
-            notice.frame = NSRect(x: 62, y: (112 - size.height) / 2, width: size.width, height: size.height)
+            let size = notice.sizeThatFits(width: HUDNoticeView.preferredWidth)
+            notice.frame = NSRect(x: (444 - size.width) / 2, y: (112 - size.height) / 2,
+                                 width: size.width, height: size.height)
         }
         switch index {
         case 0: hud.show(.listening)

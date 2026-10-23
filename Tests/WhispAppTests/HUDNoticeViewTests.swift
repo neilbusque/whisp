@@ -75,7 +75,7 @@ import Testing
         let detail = try label("notice.detail", in: view)
         #expect(detail.stringValue == recovery)
         #expect(detail.maximumNumberOfLines == 0)
-        #expect(detail.frame.maxY <= view.bounds.height - 15)
+        #expect(detail.frame.maxY <= view.bounds.height - 11)
         #expect(detail.frame.height > 200)
         #expect(view.sizeThatFits(width: 280).height > size.height)
     }
@@ -91,7 +91,7 @@ import Testing
         let title = try label("notice.heading", in: view)
         #expect(title.stringValue == message.trimmingCharacters(in: .whitespacesAndNewlines))
         #expect(try label("notice.detail", in: view).isHidden)
-        #expect(title.frame.maxY <= view.bounds.height - 15)
+        #expect(title.frame.maxY <= view.bounds.height - 11)
         #expect(title.frame.height > 100)
     }
 

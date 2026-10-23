@@ -27,7 +27,7 @@ import WhispCore
         defer { hud.hide() }
         let explanation = "Enable Accessibility for automatic paste. Dictation copied. Press Command+V to paste."
         hud.show(.error(explanation))
-        #expect(hud.window.frame.width == 340)
+        #expect(hud.window.frame.width == 320)
         #expect(hud.window.title.contains(explanation))
         let notice = hud.window.contentView?.subviews.compactMap { $0 as? HUDNoticeView }.first
         let waveform = hud.window.contentView?.subviews.compactMap { $0 as? VoiceActivityView }.first
@@ -50,10 +50,24 @@ import WhispCore
         let hud = HUDWindow(reducedMotion: true)
         defer { hud.hide() }
         hud.showPracticeStatus("Microphone unavailable", done: true, error: true)
-        #expect(hud.window.frame.width == 340)
+        #expect(hud.window.frame.width == 320)
         #expect(hud.window.title.contains("Microphone unavailable"))
         hud.showPractice(elapsed: 83)
         #expect(hud.window.frame.width == 196)
         #expect(hud.window.title == "Whisp: Practice recording, 1:23")
+    }
+
+    @Test func shortNoticeFadesPromptlyWithoutHidingANewRecording() async throws {
+        _ = NSApplication.shared
+        let notice = HUDWindow(reducedMotion: false)
+        let recording = HUDWindow(reducedMotion: true)
+        defer { notice.hide(); recording.hide() }
+        notice.show(.error("Nothing heard"))
+        recording.show(.error("Nothing heard"))
+        recording.show(.listening)
+        try await Task.sleep(for: .seconds(2.4))
+        #expect(!notice.window.isVisible)
+        #expect(recording.window.isVisible)
+        #expect(recording.window.title == "Whisp: Listening")
     }
 }

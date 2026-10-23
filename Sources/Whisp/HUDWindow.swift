@@ -63,7 +63,7 @@ final class HUDWindow: NSObject {
             scheduleHide(after: 1.0)
         case .error(let text):
             present(.error, description: text, message: text)
-            scheduleHide(after: 4.0)
+            scheduleHide(after: noticeDuration(text), fadeDuration: 0.12)
         }
     }
 
@@ -76,7 +76,8 @@ final class HUDWindow: NSObject {
     func showPracticeStatus(_ text: String, done: Bool = false, error: Bool = false) {
         present(error ? .error : done ? .done : .transcribing, description: text,
                 message: error ? text : nil)
-        if done || error { scheduleHide(after: error ? 4.0 : 1.6) }
+        if error { scheduleHide(after: noticeDuration(text), fadeDuration: 0.12) }
+        else if done { scheduleHide(after: 1.6) }
     }
 
     private func present(_ state: VoiceActivityView.State, description: String, message text: String? = nil) {
@@ -105,7 +106,7 @@ final class HUDWindow: NSObject {
 
     private func layout(message text: String?) {
         let waveSize = VoiceActivityView.preferredSize
-        let width: CGFloat = text == nil ? waveSize.width + 20 : 340
+        let width: CGFloat = text == nil ? waveSize.width + 20 : HUDNoticeView.preferredWidth + 20
         var height: CGFloat = waveSize.height + 20
         if let text {
             message.setMessage(text)
@@ -133,7 +134,11 @@ final class HUDWindow: NSObject {
         window.alphaValue = 1
     }
 
-    private func scheduleHide(after seconds: Double) {
+    private func noticeDuration(_ text: String) -> Double {
+        text.count > 100 ? 2.8 : 2.0
+    }
+
+    private func scheduleHide(after seconds: Double, fadeDuration: Double = 0.18) {
         hideWork?.cancel()
         let token = presentation
         hideWork = Task { @MainActor [weak self] in
@@ -141,10 +146,10 @@ final class HUDWindow: NSObject {
             guard !Task.isCancelled, let self, token == self.presentation else { return }
             if self.reducedMotion() { self.hide(); return }
             NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.18
+                context.duration = fadeDuration
                 self.window.animator().alphaValue = 0
             }, completionHandler: nil)
-            try? await Task.sleep(for: .milliseconds(190))
+            try? await Task.sleep(for: .seconds(fadeDuration + 0.01))
             guard !Task.isCancelled, token == self.presentation else { return }
             self.hide()
         }
