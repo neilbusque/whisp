@@ -16,7 +16,8 @@ import WhispCore
         #expect(!hud.window.hasShadow)
         #expect(hud.window.backgroundColor.alphaComponent == 0)
         hud.show(.listening)
-        let backings = hud.window.contentView?.subviews.compactMap { $0 as? NSVisualEffectView } ?? []
+        let backings = hud.window.contentView?.subviews.compactMap { $0 as? HUDNoticeView } ?? []
+        #expect(backings.count == 1)
         #expect(backings.allSatisfy { $0.isHidden })
     }
 
@@ -28,9 +29,18 @@ import WhispCore
         hud.show(.error(explanation))
         #expect(hud.window.frame.width == 340)
         #expect(hud.window.title.contains(explanation))
+        let notice = hud.window.contentView?.subviews.compactMap { $0 as? HUDNoticeView }.first
+        let waveform = hud.window.contentView?.subviews.compactMap { $0 as? VoiceActivityView }.first
+        #expect(notice?.isHidden == false)
+        #expect(waveform?.isHidden == true)
+        #expect(waveform?.state == .idle)
         hud.show(.listening)
+        hud.setLevel(0.3)
         #expect(hud.window.frame.size == NSSize(width: 196, height: 76))
         #expect(hud.window.title == "Whisp: Listening")
+        #expect(notice?.isHidden == true)
+        #expect(waveform?.isHidden == false)
+        #expect(waveform?.state == .listening)
         hud.show(.idle)
         #expect(!hud.window.isVisible)
     }

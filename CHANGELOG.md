@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.5 · 2026-10-23
+
+- Present dictation guidance in one compact charcoal notification matching Copilot and Replay Coach.
+- Use a clear heading, useful recovery instructions, and a small status icon.
+- Keep the speaking waveform transparent and restore it cleanly after a notification.
+
 ## 0.6.4 · 2026-10-23
 
 - Replace the microphone orb with an audio waveform in cyan, blue, and violet gradients.

@@ -12,8 +12,7 @@ final class HUDWindow: NSObject {
 
     let window: NSPanel
     private let activity: VoiceActivityView
-    private let detail = NSTextField(wrappingLabelWithString: "")
-    private let message = NSVisualEffectView()
+    private let message = HUDNoticeView(frame: .zero)
     private var hideWork: Task<Void, Never>?
     private var presentation = 0
     private let reducedMotion: () -> Bool
@@ -37,19 +36,7 @@ final class HUDWindow: NSObject {
         let content = NSView(frame: window.frame)
         window.contentView = content
         content.addSubview(activity)
-        message.material = .popover
-        message.blendingMode = .behindWindow
-        message.state = .active
-        message.wantsLayer = true
-        message.layer?.cornerRadius = 14
-        message.layer?.masksToBounds = true
-        message.layer?.borderWidth = 0.5
-        message.layer?.borderColor = NSColor(white: 1, alpha: 0.16).cgColor
         content.addSubview(message)
-        detail.font = .systemFont(ofSize: 12, weight: .medium)
-        detail.textColor = .labelColor
-        detail.maximumNumberOfLines = 0
-        message.addSubview(detail)
         message.isHidden = true
         activity.setAccessibilityElement(true)
         activity.setAccessibilityRole(.image)
@@ -95,7 +82,7 @@ final class HUDWindow: NSObject {
     private func present(_ state: VoiceActivityView.State, description: String, message text: String? = nil) {
         hideWork?.cancel()
         presentation += 1
-        activity.setState(state)
+        activity.setState(text == nil ? state : .idle)
         activity.setAccessibilityLabel(description)
         window.title = "Whisp: \(description)"
         layout(message: text)
@@ -121,26 +108,15 @@ final class HUDWindow: NSObject {
         let width: CGFloat = text == nil ? waveSize.width + 20 : 340
         var height: CGFloat = waveSize.height + 20
         if let text {
-            detail.stringValue = text
-            let textWidth: CGFloat = width - 104
-            let bounds = (text as NSString).boundingRect(
-                with: NSSize(width: textWidth, height: 1000),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: [.font: detail.font!])
-            height = max(80, ceil(bounds.height) + 32)
-            message.frame = NSRect(x: 72, y: 8, width: width - 80, height: height - 16)
-            detail.frame = NSRect(x: 12, y: 8, width: textWidth, height: height - 32)
-            let size = message.bounds.size
-            message.maskImage = NSImage(size: size, flipped: false) { rect in
-                NSColor.white.setFill()
-                NSBezierPath(roundedRect: rect, xRadius: 14, yRadius: 14).fill()
-                return true
-            }
+            message.setMessage(text)
+            let size = message.sizeThatFits(width: width - 20)
+            height = size.height + 20
+            message.frame = NSRect(origin: NSPoint(x: 10, y: 10), size: size)
         }
         message.isHidden = text == nil
-        let activityWidth = text == nil ? waveSize.width : 56
+        activity.isHidden = text != nil
         activity.frame = NSRect(x: 10, y: (height - waveSize.height) / 2,
-                                width: activityWidth, height: waveSize.height)
+                                width: waveSize.width, height: waveSize.height)
         let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         window.setFrame(NSRect(x: visible.midX - width / 2, y: visible.minY + 72,
                                width: width, height: height), display: true)

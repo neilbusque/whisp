@@ -75,8 +75,9 @@ five minutes.
 A floating audio waveform responds to your voice with cyan, blue, and violet
 gradient bars and a subtle glow on a fully transparent background. It stays still
 while you are silent, animates during processing, and shows a checkmark on completion.
-The indicator stays out of the way of your mouse and keyboard. Errors still show
-instructions, and macOS Reduce Motion is respected.
+The indicator stays out of the way of your mouse and keyboard. Guidance appears
+in compact dark notifications with clear recovery instructions. macOS Reduce
+Motion is respected.
 
 To preview the indicator without using the microphone or network, run
 `Whisp.app/Contents/MacOS/Whisp --hud-preview --no-hotkeys` after building.

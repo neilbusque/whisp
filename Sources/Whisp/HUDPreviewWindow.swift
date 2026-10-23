@@ -8,6 +8,8 @@ final class HUDPreviewWindow: NSObject, NSApplicationDelegate {
     private let hud: HUDWindow
     private let sample: VoiceActivityView
     private let darkSample: VoiceActivityView
+    private let notice = HUDNoticeView(frame: .zero)
+    private let noticeHost = NSView()
     private var levels: Task<Void, Never>?
 
     init(reducedMotion: Bool? = nil) {
@@ -25,22 +27,28 @@ final class HUDPreviewWindow: NSObject, NSApplicationDelegate {
         item.submenu = appMenu
         menu.addItem(item)
         NSApp.mainMenu = menu
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 360),
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 540),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Whisp animation preview"
         window.isReleasedWhenClosed = false
-        let heading = NSTextField(labelWithString: "Voice waveform")
+        let heading = NSTextField(labelWithString: "Whisp indicators")
         heading.font = .systemFont(ofSize: 22, weight: .semibold)
         let info = NSTextField(wrappingLabelWithString: "Preview each state. No microphone or network is used.")
-        let buttons = ["Listening", "Transcribing", "Polishing", "Done", "Error", "Practice", "Hide", "Silence"].enumerated().map { index, title in
+        let buttons = ["Listening", "Transcribing", "Polishing", "Done", "Error", "Practice", "Hide", "Silence", "Nothing heard", "Text field"].enumerated().map { index, title in
             let button = NSButton(title: title, target: self, action: #selector(selectState(_:)))
             button.tag = index
             return button
         }
-        let rows = [NSStackView(views: Array(buttons.prefix(3))), NSStackView(views: Array(buttons.suffix(5)))]
+        let rows = [NSStackView(views: Array(buttons.prefix(3))),
+                    NSStackView(views: Array(buttons[3..<8])),
+                    NSStackView(views: Array(buttons.suffix(2)))]
         let backdrops = NSStackView(views: [backdrop(sample, dark: false), backdrop(darkSample, dark: true)])
         backdrops.spacing = 16
-        let stack = NSStackView(views: [heading, info, backdrops] + rows)
+        noticeHost.widthAnchor.constraint(equalToConstant: 444).isActive = true
+        noticeHost.heightAnchor.constraint(equalToConstant: 112).isActive = true
+        noticeHost.addSubview(notice)
+        notice.isHidden = true
+        let stack = NSStackView(views: [heading, info, backdrops, noticeHost] + rows)
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 20
@@ -79,9 +87,21 @@ final class HUDPreviewWindow: NSObject, NSApplicationDelegate {
 
     private func show(_ index: Int) {
         levels?.cancel()
-        let states: [VoiceActivityView.State] = [.listening, .transcribing, .polishing, .done, .error, .practice, .idle, .listening]
+        let states: [VoiceActivityView.State] = [.listening, .transcribing, .polishing, .done, .idle, .practice, .idle, .listening]
         sample.setState(states.indices.contains(index) ? states[index] : .idle)
         darkSample.setState(states.indices.contains(index) ? states[index] : .idle)
+        let message: String? = switch index {
+        case 4: "Text copied. Press Command + V to paste."
+        case 8: "Nothing heard"
+        case 9: "Text field changed. Use Command+V or Copy Last Dictation."
+        default: nil
+        }
+        notice.isHidden = message == nil
+        if let message {
+            notice.setMessage(message)
+            let size = notice.sizeThatFits(width: 320)
+            notice.frame = NSRect(x: 62, y: (112 - size.height) / 2, width: size.width, height: size.height)
+        }
         switch index {
         case 0: hud.show(.listening)
         case 1: hud.show(.transcribing)
@@ -94,6 +114,7 @@ final class HUDPreviewWindow: NSObject, NSApplicationDelegate {
             hud.setLevel(0)
             sample.pushLevel(0)
             darkSample.pushLevel(0)
+        case 8, 9: hud.show(.error(message!))
         default: hud.hide()
         }
         if index == 0 || index == 5 {
