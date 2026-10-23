@@ -17,12 +17,18 @@ import WhispCore
 final class WhisperTranscriber: Transcribing, @unchecked Sendable {
     private let ctx: OpaquePointer
     private let lock = NSLock()
+    private let inferenceQueue = DispatchQueue(label: "com.busqueneil.whisp.inference", qos: .userInitiated)
     /// Vocabulary hint that biases decoding toward the user's terms (names,
     /// brands, jargon). Empty disables it.
-    private let initialPrompt: String
+    private var initialPrompt: String = ""
+    private let threadCount: Int32
 
-    init(modelPath: String, initialPrompt: String = "") throws {
-        self.initialPrompt = initialPrompt
+    static var recommendedThreadCount: Int32 {
+        Int32(min(8, max(2, ProcessInfo.processInfo.activeProcessorCount - 2)))
+    }
+
+    init(modelPath: String, vocabulary: [String] = [], threads: Int32 = WhisperTranscriber.recommendedThreadCount) throws {
+        threadCount = max(1, min(threads, 8))
         var cparams = whisper_context_default_params()
         cparams.use_gpu = false // CPU backend only (no Metal compiler under CLT)
         guard let c = whisper_init_from_file_with_params(modelPath, cparams) else {
@@ -30,6 +36,22 @@ final class WhisperTranscriber: Transcribing, @unchecked Sendable {
                           userInfo: [NSLocalizedDescriptionKey: "Failed to load model at \(modelPath)"])
         }
         ctx = c
+        rebuildPrompt(vocabulary)
+    }
+
+    func updateVocabulary(_ vocabulary: [String]) {
+        inferenceQueue.async { self.lock.withLock { self.rebuildPrompt(vocabulary) } }
+    }
+
+    private func rebuildPrompt(_ vocabulary: [String]) {
+        let tokenLimit = Int(whisper_n_text_ctx(ctx)) / 2
+        initialPrompt = RecognitionPrompt.make(vocabulary: vocabulary, tokenLimit: tokenLimit) { text in
+            text.withCString { pointer in
+                var tokens = [whisper_token](repeating: 0, count: tokenLimit + 1)
+                let count = whisper_tokenize(ctx, pointer, &tokens, Int32(tokens.count))
+                return abs(Int(count))
+            }
+        }
     }
 
     deinit { whisper_free(ctx) }
@@ -39,7 +61,7 @@ final class WhisperTranscriber: Transcribing, @unchecked Sendable {
         // we never park a Swift concurrency thread, and serialize access to the
         // single (non-reentrant) whisper_context with the lock.
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
-            DispatchQueue.global(qos: .userInitiated).async {
+            inferenceQueue.async {
                 do {
                     cont.resume(returning: try self.transcribeSync(samples))
                 } catch {
@@ -49,12 +71,21 @@ final class WhisperTranscriber: Transcribing, @unchecked Sendable {
         }
     }
 
+    /// Synchronous entry point used by the app's headless latency benchmark.
+    /// Production dictation continues to use the async API above.
+    func transcribeForBenchmark(_ samples: [Float]) throws -> String {
+        try transcribeSync(samples)
+    }
+
     private func transcribeSync(_ samples: [Float]) throws -> String {
         lock.lock(); defer { lock.unlock() }
 
-        guard !samples.isEmpty else { return "" }
+        let prepared = DictationAudio.prepare(samples)
+        guard !prepared.isEmpty else { return "" }
+        let started = ContinuousClock.now
 
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
+        params.n_threads = threadCount
         params.print_progress = false
         params.print_realtime = false
         params.print_timestamps = false
@@ -63,7 +94,7 @@ final class WhisperTranscriber: Transcribing, @unchecked Sendable {
         params.single_segment = false
 
         func run() -> Int32 {
-            samples.withUnsafeBufferPointer { buf in
+            prepared.withUnsafeBufferPointer { buf in
                 whisper_full(ctx, params, buf.baseAddress, Int32(buf.count))
             }
         }
@@ -88,7 +119,10 @@ final class WhisperTranscriber: Transcribing, @unchecked Sendable {
                 text += String(cString: seg)
             }
         }
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let result = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let audioSeconds = Double(samples.count) / 16_000
+        Diag.log("transcription finished (audio=\(String(format: "%.2f", audioSeconds))s, elapsed=\(started.duration(to: .now)))")
+        return result
     }
 
     /// Transcribes chunks in order, returning whole-session-timed segments.
@@ -106,7 +140,7 @@ final class WhisperTranscriber: Transcribing, @unchecked Sendable {
         var all: [TranscriptSegment] = []
         for (i, chunk) in chunks.enumerated() {
             let segs: [TranscriptSegment] = try await withCheckedThrowingContinuation { cont in
-                DispatchQueue.global(qos: .utility).async {
+                inferenceQueue.async {
                     do {
                         cont.resume(returning: try self.segmentsSync(chunk))
                     } catch {
@@ -135,6 +169,7 @@ final class WhisperTranscriber: Transcribing, @unchecked Sendable {
         guard !chunk.samples.isEmpty else { return [] }
 
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
+        params.n_threads = threadCount
         params.print_progress = false
         params.print_realtime = false
         params.print_timestamps = false

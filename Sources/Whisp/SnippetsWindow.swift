@@ -13,7 +13,8 @@ final class SnippetsWindowController {
             let host = NSHostingController(rootView: view)
             let win = NSWindow(contentViewController: host)
             win.title = "Whisp Snippets"
-            win.setContentSize(NSSize(width: 640, height: 480))
+            win.setContentSize(NSSize(width: 780, height: 620))
+            win.minSize = NSSize(width: 650, height: 540)
             win.styleMask = [.titled, .closable, .resizable]
             win.isReleasedWhenClosed = false
             window = win
@@ -26,11 +27,15 @@ final class SnippetsWindowController {
     }
 }
 
-private struct SnippetsView: View {
+struct SnippetsView: View {
     let path: String
     @State private var snippets: [Snippet] = []
     @State private var selection: UUID?
     @State private var saveState: SaveState = .clean
+    @State private var savedSnippets: [Snippet] = []
+    @State private var loaded = false
+    @State private var error: String?
+    @FocusState private var keywordFocused: Bool
 
     enum SaveState { case clean, dirty, saved }
 
@@ -42,54 +47,55 @@ private struct SnippetsView: View {
                 list
                 detail
             }
+            Divider()
+            footer
         }
-        .tint(.wIris)
+        .tint(Color.accentColor)
         .onAppear(perform: load)
-        .frame(minWidth: 600, minHeight: 440)
     }
 
     // MARK: Header
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "text.bubble")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color.voiceGradient)
-            Text("Snippets")
-                .font(.system(.title3, design: .rounded).weight(.semibold))
-            Text("Say a keyword to drop in saved text or an AI-written reply.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+        HStack(alignment: .center, spacing: 20) {
+            VStack(alignment: .leading, spacing: 7) {
+                Text("Snippets")
+                    .font(.system(size: 24, weight: .semibold))
+                Text("Insert text with a spoken phrase.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
             Spacer()
-            saveControls
+            Button(action: add) { Label("New snippet", systemImage: "plus") }
+                .disabled(!loaded)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(28)
     }
 
-    private var saveControls: some View {
+    private var footer: some View {
         HStack(spacing: 12) {
-            switch saveState {
-            case .dirty:
-                Label("Unsaved", systemImage: "circle.fill")
-                    .labelStyle(.titleAndIcon)
-                    .font(.caption).foregroundStyle(.secondary)
-                    .imageScale(.small)
-            case .saved:
-                Label("Saved", systemImage: "checkmark.circle.fill")
-                    .font(.caption).foregroundStyle(Color.wMint)
-            case .clean:
-                EmptyView()
+            if let error {
+                Text(error).font(.system(size: 12)).foregroundStyle(.red).textSelection(.enabled)
+            } else {
+                switch saveState {
+                case .dirty:
+                    Text("Unsaved changes").font(.system(size: 12)).foregroundStyle(.secondary)
+                case .saved:
+                    Label("Saved", systemImage: "checkmark")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                case .clean:
+                    Text(snippets.count == 1 ? "1 snippet" : "\(snippets.count) snippets")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                }
             }
-            Button { add() } label: { Image(systemName: "plus") }
-                .help("Add snippet")
-            Button { delete() } label: { Image(systemName: "trash") }
-                .help("Delete snippet")
-                .disabled(selection == nil)
-            Button { save() } label: { Label("Save", systemImage: "tray.and.arrow.down") }
+            Spacer()
+            if !loaded { Button("Try again", action: load) }
+            Button("Save changes", action: save)
                 .buttonStyle(.borderedProminent)
-                .disabled(saveState != .dirty)
+                .disabled(!loaded || saveState != .dirty)
         }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 18)
     }
 
     // MARK: List
@@ -98,12 +104,13 @@ private struct SnippetsView: View {
         List(selection: $selection) {
             ForEach(snippets) { s in
                 HStack(spacing: 8) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(s.keyword.isEmpty ? "untitled" : s.keyword)
-                            .font(.system(.body, design: .rounded).weight(.medium))
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(s.keyword.isEmpty ? "Untitled snippet" : s.keyword)
+                            .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(s.enabled ? .primary : .secondary)
                             .lineLimit(1)
-                        modeChip(s.mode)
+                        Text(s.mode == .ai ? "AI template" : "Saved text")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                     Spacer()
                     if !s.enabled {
@@ -112,24 +119,12 @@ private struct SnippetsView: View {
                             .help("Disabled")
                     }
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, 7)
                 .tag(s.id)
             }
         }
-        .frame(minWidth: 200, idealWidth: 220)
-    }
-
-    private func modeChip(_ mode: SnippetMode) -> some View {
-        Text(mode == .ai ? "AI" : "VERBATIM")
-            .font(.system(size: 9, weight: .bold))
-            .tracking(0.5)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                Capsule().fill(mode == .ai
-                    ? AnyShapeStyle(Color.voiceGradient)
-                    : AnyShapeStyle(Color.secondary.opacity(0.22))))
-            .foregroundStyle(mode == .ai ? .white : .secondary)
+        .listStyle(.inset)
+        .frame(minWidth: 190, idealWidth: 220, maxWidth: 260)
     }
 
     // MARK: Detail
@@ -138,16 +133,16 @@ private struct SnippetsView: View {
         if let idx = snippets.firstIndex(where: { $0.id == selection }) {
             editor(idx)
         } else {
-            VStack(spacing: 8) {
-                Image(systemName: "text.cursor")
-                    .font(.system(size: 30))
-                    .foregroundStyle(.tertiary)
-                Text("No snippet selected")
-                    .font(.system(.headline, design: .rounded))
-                Text("Pick a snippet on the left, or add one to get started.")
-                    .font(.callout)
+            VStack(spacing: 12) {
+                Image(systemName: "text.bubble")
+                    .font(.system(size: 27, weight: .light))
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                    .accessibilityHidden(true)
+                Text(snippets.isEmpty ? "Save text you use often." : "Choose a snippet to edit.")
+                    .font(.system(size: 16, weight: .medium))
+                Button("Add snippet", action: add)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!loaded)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding()
@@ -156,70 +151,119 @@ private struct SnippetsView: View {
 
     @ViewBuilder private func editor(_ idx: Int) -> some View {
         let isAI = snippets[idx].mode == .ai
-        Form {
-            Section {
-                TextField("Keyword you'll say", text: binding(idx, \.keyword))
-                Picker("Mode", selection: binding(idx, \.mode)) {
-                    Text("Verbatim").tag(SnippetMode.verbatim)
-                    Text("AI template").tag(SnippetMode.ai)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                HStack {
+                    Text("Edit snippet").font(.system(size: 17, weight: .semibold))
+                    Spacer()
+                    Button(action: delete) { Image(systemName: "trash") }
+                        .accessibilityLabel("Delete snippet")
+                        .help("Delete snippet")
                 }
-                .pickerStyle(.segmented)
-                Toggle("Enabled", isOn: binding(idx, \.enabled))
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Phrase you'll say").font(.system(size: 12, weight: .medium))
+                    TextField("For example, my signature", text: binding(idx, \.keyword))
+                        .textFieldStyle(.roundedBorder)
+                        .focused($keywordFocused)
+                        .accessibilityLabel("Phrase you'll say")
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Insert as").font(.system(size: 12, weight: .medium))
+                    Picker("Insert as", selection: binding(idx, \.mode)) {
+                        Text("Saved text").tag(SnippetMode.verbatim)
+                        Text("AI template").tag(SnippetMode.ai)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+                Divider()
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(isAI ? "Instructions for OpenAI" : "Text to insert")
+                        .font(.system(size: 12, weight: .medium))
+                    TextEditor(text: binding(idx, \.content))
+                        .font(.system(size: 13))
+                        .frame(minHeight: 200)
+                        .scrollContentBackground(.hidden)
+                        .padding(10)
+                        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+                        .accessibilityLabel(isAI ? "Instructions for OpenAI" : "Text to insert")
+                    Text(isAI
+                        ? "OpenAI uses these instructions and anything you say after the phrase to write a reply."
+                        : "Whisp inserts this text exactly as written.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Toggle("Enable this snippet", isOn: binding(idx, \.enabled))
             }
-
-            Section {
-                TextEditor(text: binding(idx, \.content))
-                    .font(.system(.body, design: .monospaced))
-                    .frame(minHeight: 200)
-                    .scrollContentBackground(.hidden)
-                    .padding(8)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.08)))
-            } header: {
-                Text(isAI ? "Instruction for the AI" : "Text pasted exactly")
-            } footer: {
-                Text(isAI
-                    ? "Whisp sends this plus anything you say after the keyword to DeepSeek, and pastes the reply."
-                    : "Pasted verbatim, no AI. Good for templates and boilerplate.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(28)
         }
-        .formStyle(.grouped)
     }
 
     // MARK: Bindings + IO
 
     private func binding<T>(_ idx: Int, _ key: WritableKeyPath<Snippet, T>) -> Binding<T> {
-        Binding(
-            get: { snippets[idx][keyPath: key] },
-            set: { snippets[idx][keyPath: key] = $0; saveState = .dirty })
+        let id = snippets[idx].id
+        let fallback = snippets[idx][keyPath: key]
+        return Binding(
+            get: { snippets.first(where: { $0.id == id })?[keyPath: key] ?? fallback },
+            set: { value in
+                guard let current = snippets.firstIndex(where: { $0.id == id }) else { return }
+                snippets[current][keyPath: key] = value
+                markEdited()
+            })
     }
 
     private func load() {
-        if let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-           let store = try? SnippetStore.load(from: data) {
-            snippets = store.all
+        guard !loaded else { return }
+        do {
+            if FileManager.default.fileExists(atPath: path) {
+                let data = try Data(contentsOf: URL(fileURLWithPath: path))
+                snippets = try SnippetStore.load(from: data).all
+            }
+            savedSnippets = snippets
+            selection = snippets.first?.id
+            saveState = .clean
+            loaded = true
+            error = nil
+        } catch {
+            self.error = "Could not load snippets: \(error.localizedDescription)"
         }
-        saveState = .clean
+    }
+
+    private func markEdited() {
+        saveState = snippets == savedSnippets ? .clean : .dirty
+        error = nil
     }
 
     private func add() {
         let s = Snippet(keyword: "new keyword", mode: .verbatim, content: "")
         snippets.append(s)
         selection = s.id
-        saveState = .dirty
+        markEdited()
+        keywordFocused = true
     }
 
     private func delete() {
-        snippets.removeAll { $0.id == selection }
-        selection = nil
-        saveState = .dirty
+        guard let idx = snippets.firstIndex(where: { $0.id == selection }) else { return }
+        snippets.remove(at: idx)
+        selection = snippets.isEmpty ? nil : snippets[min(idx, snippets.count - 1)].id
+        markEdited()
     }
 
     private func save() {
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try? enc.encode(snippets).write(to: URL(fileURLWithPath: path))
-        saveState = .saved
+        do {
+            try enc.encode(snippets).write(to: URL(fileURLWithPath: path), options: .atomic)
+            savedSnippets = snippets
+            saveState = .saved
+            error = nil
+            NotificationCenter.default.post(name: .whispConfigChanged, object: nil)
+        } catch {
+            self.error = "Could not save snippets: \(error.localizedDescription)"
+        }
     }
 }

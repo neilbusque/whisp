@@ -6,7 +6,7 @@ import Foundation
     func makeStore() -> PromptStore {
         PromptStore(prompts: [
             PracticePrompt(title: "Why hire you", text: "Answer in 90 seconds."),
-            PracticePrompt(title: "Niruron pitch", text: "Pitch the offer."),
+            PracticePrompt(title: "Pitch an idea", text: "Pitch the offer."),
         ])
     }
 

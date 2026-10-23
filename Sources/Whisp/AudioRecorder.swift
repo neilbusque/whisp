@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import WhispCore
+import WhispAudio
 
 /// Captures microphone audio at the hardware sample rate, then converts
 /// captured PCM to 16 kHz mono Float32 on ``stop()``.
@@ -20,6 +21,8 @@ final class AudioRecorder: @unchecked Sendable {
     // Protected by `lock`; written from the audio tap, read on stop().
     private var _buffers: [AVAudioPCMBuffer] = []
     private var _inputFormat: AVAudioFormat?
+    private var _stream: StreamingCapture?
+    private var _capturing = false
 
     // Protected by `lock`; read on the audio thread, settable by callers.
     private var _level: (Float) -> Void = { _ in }
@@ -39,7 +42,8 @@ final class AudioRecorder: @unchecked Sendable {
     // MARK: - Public interface
 
     /// Starts microphone capture. Throws if the audio engine fails to start.
-    func start() throws {
+    func start(onPCM24k: (@Sendable (Data) -> Void)? = nil,
+               onPCMError: @Sendable @escaping (Error) -> Void = { _ in }) throws {
         // One tap per bus. AVAudioEngine raises a fatal exception on a second
         // installTap, and the callers share this instance, so enforce it here
         // rather than trusting every call site to check.
@@ -54,6 +58,8 @@ final class AudioRecorder: @unchecked Sendable {
         _inputFormat = nil
         _envelope = EnvelopeBuilder()
         _framesSeen = 0
+        _stream = nil
+        _capturing = false
         lock.unlock()
 
         let input = engine.inputNode
@@ -63,6 +69,16 @@ final class AudioRecorder: @unchecked Sendable {
         _inputFormat = fmt
         lock.unlock()
 
+        guard fmt.sampleRate > 0, fmt.channelCount > 0 else {
+            throw NSError(domain: "Whisp.AudioRecorder", code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "No microphone input is available."])
+        }
+        var stream: StreamingCapture?
+        if let onPCM24k {
+            do { stream = try StreamingCapture(format: fmt, callback: onPCM24k, onError: onPCMError) }
+            catch { onPCMError(error) }
+        }
+        lock.withLock { _stream = stream; _capturing = true }
         input.installTap(onBus: 0, bufferSize: 1024, format: fmt) { [weak self] buf, _ in
             guard let self else { return }
             let rms = Self.rms(buf)
@@ -71,7 +87,9 @@ final class AudioRecorder: @unchecked Sendable {
             // release the lock BEFORE invoking the callback so a slow user
             // closure can never block — or re-enter — the lock.
             let cb: (Float) -> Void = self.lock.withLock {
+                guard self._capturing else { return { _ in } }
                 if let copy { self._buffers.append(copy) }
+                if let copy { self._stream?.append(copy) }
                 // Sample-clock time, not wall-clock: exact and monotonic.
                 let seconds = Double(self._framesSeen) / fmt.sampleRate
                 self._framesSeen += Int(buf.frameLength)
@@ -83,60 +101,137 @@ final class AudioRecorder: @unchecked Sendable {
         }
 
         engine.prepare()
-        try engine.start()
+        do { try engine.start() }
+        catch {
+            input.removeTap(onBus: 0)
+            engine.stop()
+            lock.withLock { _capturing = false; _stream = nil; _buffers.removeAll() }
+            throw error
+        }
     }
 
-    /// Stops capture and returns 16 kHz mono Float32 samples.
-    func stop() -> [Float] {
-        // removeTap drains any in-flight tap callbacks, so no tap fires after
-        // this returns — that's why the subsequent unlocked read of the
-        // snapshotted buffers is sufficient.
+    /// Captured buffers are immutable after removing the tap. Resampling runs
+    /// away from the main actor and the retained mic buffers are released.
+    private struct Capture: @unchecked Sendable {
+        let buffers: [AVAudioPCMBuffer]
+        let format: AVAudioFormat?
+        let envelope: [Float]
+        let stream: StreamingCapture?
+    }
+
+    private func finishCapture() -> Capture {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
-
-        lock.lock()
-        let capturedBuffers = _buffers
-        let inFmt = _inputFormat
-        lock.unlock()
-
-        guard let inFmt, !capturedBuffers.isEmpty else { return [] }
-
-        guard let outFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
-                                            sampleRate: 16_000, channels: 1,
-                                            interleaved: false) else { return [] }
-        guard let converter = AVAudioConverter(from: inFmt, to: outFormat) else {
-            return []
+        return lock.withLock {
+            _capturing = false
+            let capture = Capture(buffers: _buffers, format: _inputFormat,
+                                  envelope: _envelope.finish(), stream: _stream)
+            _buffers.removeAll(keepingCapacity: false)
+            _inputFormat = nil
+            _stream = nil
+            return capture
         }
-
-        var out: [Float] = []
-        out.reserveCapacity(capturedBuffers.reduce(0) { $0 + Int($1.frameLength) })
-
-        for inBuf in capturedBuffers {
-            let ratio = 16_000.0 / inFmt.sampleRate
-            let cap = AVAudioFrameCount(Double(inBuf.frameLength) * ratio) + 256
-            guard let outBuf = AVAudioPCMBuffer(pcmFormat: outFormat,
-                                                frameCapacity: cap) else { continue }
-            var fed = false
-            var convErr: NSError?
-            converter.convert(to: outBuf, error: &convErr) { _, status in
-                if fed { status.pointee = .noDataNow; return nil }
-                fed = true; status.pointee = .haveData; return inBuf
-            }
-            guard convErr == nil, let ptr = outBuf.floatChannelData?[0] else { continue }
-            out.append(contentsOf: UnsafeBufferPointer(start: ptr,
-                                                        count: Int(outBuf.frameLength)))
-        }
-        return out
     }
 
-    /// Practice-mode variant of `stop()`. Returns the same samples plus the
-    /// 20 Hz envelope accumulated during capture.
-    func stopWithEnvelope() -> (samples: [Float], envelope: [Float]) {
-        // stop() first: removeTap drains in-flight callbacks, so any level
-        // delivered during the drain is only in the builder AFTER stop returns.
-        let samples = stop()
-        let envelope = lock.withLock { _envelope.finish() }
-        return (samples, envelope)
+    /// The remote stream is fully drained when this handle is returned. Local
+    /// recovery/audio-history samples convert in parallel, so the caller can
+    /// commit the remote turn without waiting for whole-clip resampling.
+    /// The caller owns `samples` and should cancel it when no longer needed.
+    struct StreamingStop: Sendable {
+        let hasAudio: Bool
+        let samples: Task<[Float], Error>
+    }
+
+    func stopForStreaming() async -> StreamingStop {
+        await Self.prepareStreamingStop(finishCapture())
+    }
+
+    func stop() async throws -> [Float] {
+        let capture = finishCapture()
+        return try await Self.convert(capture)
+    }
+
+    func stopWithEnvelope() async throws -> (samples: [Float], envelope: [Float]) {
+        let capture = finishCapture()
+        return (try await Self.convert(capture), capture.envelope)
+    }
+
+    private static func convert(_ capture: Capture) async throws -> [Float] {
+        let stopped = await prepareStreamingStop(capture)
+        return try await withTaskCancellationHandler {
+            try await stopped.samples.value
+        } onCancel: {
+            stopped.samples.cancel()
+        }
+    }
+
+    private static func prepareStreamingStop(_ capture: Capture) async -> StreamingStop {
+        let hasAudio = capture.format != nil && capture.buffers.contains { $0.frameLength > 0 }
+        let samples = Task.detached(priority: .userInitiated) { () throws -> [Float] in
+            try Task.checkCancellation()
+            guard let format = capture.format else { return [] }
+            let result = try PCMResampler.mono16k(capture.buffers, from: format)
+            try Task.checkCancellation()
+            return result
+        }
+        return await withTaskCancellationHandler {
+            // Every append callback, including final converter samples, must
+            // complete before the caller can commit the remote audio turn.
+            // Resampling uses immutable buffers and can run during this drain.
+            await capture.stream?.finish()
+            return StreamingStop(hasAudio: hasAudio, samples: samples)
+        } onCancel: {
+            samples.cancel()
+        }
+    }
+
+    /// Owns the converter on one queue. Nothing converts or sends network
+    /// traffic on CoreAudio's callback thread.
+    private final class StreamingCapture: @unchecked Sendable {
+        private let queue = DispatchQueue(label: "com.busqueneil.whisp.stream-audio", qos: .userInitiated)
+        private let converter: PCM24kStream
+        private let callback: @Sendable (Data) -> Void
+        private let onError: @Sendable (Error) -> Void
+        private var error: Error?
+
+        init(format: AVAudioFormat, callback: @Sendable @escaping (Data) -> Void,
+             onError: @Sendable @escaping (Error) -> Void) throws {
+            converter = try PCM24kStream(format: format)
+            self.callback = callback
+            self.onError = onError
+        }
+
+        private struct Buffer: @unchecked Sendable { let value: AVAudioPCMBuffer }
+
+        func append(_ buffer: AVAudioPCMBuffer) {
+            let immutable = Buffer(value: buffer)
+            queue.async {
+                guard self.error == nil else { return }
+                do {
+                    let data = try self.converter.append(immutable.value)
+                    if !data.isEmpty { self.callback(data) }
+                } catch { self.report(error) }
+            }
+        }
+
+        func finish() async {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                queue.async {
+                    defer { continuation.resume() }
+                    guard self.error == nil else { return }
+                    do {
+                        let tail = try self.converter.finish()
+                        if !tail.isEmpty { self.callback(tail) }
+                    } catch { self.report(error) }
+                }
+            }
+        }
+
+        private func report(_ error: Error) {
+            guard self.error == nil else { return }
+            self.error = error
+            onError(error)
+        }
     }
 
     // MARK: - Private helpers

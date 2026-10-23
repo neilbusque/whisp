@@ -19,9 +19,15 @@ import Foundation
             return reply
         }
     }
-    final class FakeInserter: TextInserting, @unchecked Sendable {
+    final class FakeInserter: TextInserting, SelectedTextReading, @unchecked Sendable {
         var inserted: [String] = []
+        var selectedText: String?
+        var selectionReads = 0
         func insert(_ text: String) throws { inserted.append(text) }
+        func readSelectedText() async throws -> String? {
+            selectionReads += 1
+            return selectedText
+        }
     }
 
     @Test func plainDictationGetsPolishedThenInserted() async {
@@ -34,6 +40,100 @@ import Foundation
         await pipe.process(samples: [0.0])
         #expect(inserter.inserted == ["Cleaned text."])
         #expect(cleaner.lastMessages.last?.content.contains("um hello") == true)
+    }
+
+    @Test func fastCleanupStaysLocal() async {
+        let cleaner = FakeCleaner(reply: "SHOULD-NOT-BE-USED")
+        let inserter = FakeInserter()
+        let pipe = SpeechPipeline(
+            snippets: SnippetStore(snippets: []),
+            transcriber: FakeTranscriber("Um, hello there"),
+            cleaner: cleaner, inserter: inserter, cleanupMode: .fast,
+            onStatus: { _ in })
+        await pipe.process(samples: [0.0])
+        #expect(inserter.inserted == ["Hello there."])
+        #expect(cleaner.lastMessages.isEmpty)
+    }
+
+    @Test func fastCleanupStillUsesAIForAISnippets() async {
+        let snip = Snippet(keyword: "cold email", mode: .ai, content: "Write an email.")
+        let cleaner = FakeCleaner(reply: "Generated email.")
+        let inserter = FakeInserter()
+        let pipe = SpeechPipeline(
+            snippets: SnippetStore(snippets: [snip]),
+            transcriber: FakeTranscriber("cold email to a dentist"),
+            cleaner: cleaner, inserter: inserter, cleanupMode: .fast,
+            onStatus: { _ in })
+        await pipe.process(samples: [0.0])
+        #expect(inserter.inserted == ["Generated email."])
+        #expect(!cleaner.lastMessages.isEmpty)
+    }
+
+    @Test func rewriteThisUsesSelectedTextAndProfileContext() async {
+        let cleaner = FakeCleaner(reply: "A clear, professional update.")
+        let inserter = FakeInserter()
+        inserter.selectedText = "quick update we got the website done"
+        let pipe = SpeechPipeline(
+            snippets: SnippetStore(snippets: []),
+            transcriber: FakeTranscriber("rewrite this"),
+            cleaner: cleaner, inserter: inserter, selectionReader: inserter,
+            profileContext: "Neil builds websites and marketing systems.",
+            cleanupMode: .fast, onStatus: { _ in })
+        await pipe.process(samples: [0.0])
+        #expect(inserter.inserted == ["A clear, professional update."])
+        #expect(inserter.selectionReads == 1)
+        #expect(cleaner.lastMessages.first?.content.contains("marketing systems") == true)
+        #expect(cleaner.lastMessages.last?.content.contains(
+            "quick update we got the website done") == true)
+    }
+
+    @Test func spokenRewriteUsesRemainderWithoutReadingSelection() async {
+        let cleaner = FakeCleaner(reply: "Our CRM saves the team time.")
+        let inserter = FakeInserter()
+        inserter.selectedText = "should not be used"
+        let pipe = SpeechPipeline(
+            snippets: SnippetStore(snippets: []),
+            transcriber: FakeTranscriber("make this better: our CRM saves time"),
+            cleaner: cleaner, inserter: inserter, selectionReader: inserter,
+            cleanupMode: .fast, onStatus: { _ in })
+        await pipe.process(samples: [0.0])
+        #expect(inserter.inserted == ["Our CRM saves the team time."])
+        #expect(inserter.selectionReads == 0)
+        #expect(cleaner.lastMessages.last?.content.contains("our CRM saves time") == true)
+    }
+
+    @Test func rewriteWithoutSpeechOrSelectionReportsError() async {
+        let cleaner = FakeCleaner(reply: "SHOULD-NOT-BE-USED")
+        let inserter = FakeInserter()
+        var statuses: [PipelineStatus] = []
+        let pipe = SpeechPipeline(
+            snippets: SnippetStore(snippets: []),
+            transcriber: FakeTranscriber("rephrase this"),
+            cleaner: cleaner, inserter: inserter, selectionReader: inserter,
+            cleanupMode: .fast, onStatus: { statuses.append($0) })
+        await pipe.process(samples: [0.0])
+        #expect(inserter.inserted.isEmpty)
+        #expect(cleaner.lastMessages.isEmpty)
+        #expect(statuses.contains {
+            if case .error("Select text or dictate what to rewrite") = $0 { return true }
+            return false
+        })
+    }
+
+    @Test func failedRewriteDoesNotReplaceTheUsersText() async {
+        let cleaner = FakeCleaner(reply: "")
+        cleaner.shouldThrow = true
+        let inserter = FakeInserter()
+        inserter.selectedText = "Keep this selected text intact."
+        var statuses: [PipelineStatus] = []
+        let pipe = SpeechPipeline(
+            snippets: SnippetStore(snippets: []),
+            transcriber: FakeTranscriber("rewrite this"),
+            cleaner: cleaner, inserter: inserter, selectionReader: inserter,
+            cleanupMode: .fast, onStatus: { statuses.append($0) })
+        await pipe.process(samples: [0.0])
+        #expect(inserter.inserted.isEmpty)
+        #expect(statuses.contains { if case .error = $0 { return true }; return false })
     }
 
     @Test func verbatimSnippetSkipsTheCleaner() async {

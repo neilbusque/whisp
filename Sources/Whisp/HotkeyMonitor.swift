@@ -33,7 +33,6 @@ final class HotkeyMonitor {
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var fnDown = false
-    private var lastChange = Date.distantPast
     private var poll: Task<Void, Never>?
     private var prompted = false
     private var installed = false
@@ -114,11 +113,10 @@ final class HotkeyMonitor {
     }
 
     /// Single debounced entry point for both detectors.
-    fileprivate func setFn(_ isFn: Bool) {
+    func setFn(_ isFn: Bool) {
         guard isFn != fnDown else { return }
-        let now = Date()
-        guard now.timeIntervalSince(lastChange) >= 0.12 else { return }
-        lastChange = now
+        // State deduplication is sufficient for the two detectors. A time
+        // debounce drops quick key-UP events and can leave the mic running.
         fnDown = isFn
         Diag.log("hotkey.fn \(isFn ? "DOWN" : "UP")")
         isFn ? onPress() : onRelease()

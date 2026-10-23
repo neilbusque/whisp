@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v13)],
     targets: [
         .target(name: "WhispCore"),
+        .target(name: "WhispAudio"),
         // Vendored whisper.cpp + ggml (v1.7.4), CPU backend only.
         // CLT-only Macs have no `metal` compiler, so the Metal backend is omitted;
         // the CPU backend (Accelerate-accelerated) is used and the model is kept
@@ -13,6 +14,7 @@ let package = Package(
         .target(
             name: "CWhisper",
             path: "Sources/CWhisper",
+            exclude: ["LICENSE"],
             publicHeadersPath: "include",
             cSettings: [
                 .define("GGML_USE_CPU"),
@@ -43,10 +45,12 @@ let package = Package(
         ),
         .executableTarget(
             name: "Whisp",
-            dependencies: ["WhispCore", "CWhisper"],
+            dependencies: ["WhispCore", "WhispAudio", "CWhisper"],
             path: "Sources/Whisp"
         ),
         .testTarget(name: "WhispCoreTests", dependencies: ["WhispCore"]),
+        .testTarget(name: "WhispAudioTests", dependencies: ["WhispAudio"]),
+        .testTarget(name: "WhispAppTests", dependencies: ["Whisp", "WhispCore"]),
     ],
     cxxLanguageStandard: .cxx17
 )

@@ -1,11 +1,12 @@
 import AppKit
+import Combine
 import WhispCore
 
 /// Owns the practice capture lifecycle. Deliberately separate from
-/// SpeechPipeline: no DeepSeek cleanup (it strips the fillers being measured)
+/// SpeechPipeline: no AI cleanup (it strips the fillers being measured)
 /// and no PasteInserter (nothing is ever typed at the cursor).
 @MainActor
-final class PracticeController {
+final class PracticeController: ObservableObject {
     private let recorder: AudioRecorder
     private let transcriber: WhisperTranscriber
     /// Used ONLY by the opt-in coach feedback in Task 18. The practice
@@ -14,7 +15,11 @@ final class PracticeController {
     private let cleaner: Cleaning
     private let config: WhispConfig
 
-    private(set) var isRecording = false
+    @Published private(set) var isRecording = false
+    @Published private(set) var isStopping = false
+    private var backgroundWork = 0
+    var isProcessing: Bool { backgroundWork > 0 }
+    private var limitTask: Task<Void, Never>?
     private var startedAt = Date()
     private var currentPrompt: PracticePrompt?
     private var sessionID = UUID()
@@ -25,6 +30,8 @@ final class PracticeController {
     /// Fired on the main actor whenever a session is added or updated, so an
     /// open review window can refresh.
     var sessionsChanged: () -> Void = {}
+    var onRecordingStopped: () -> Void = {}
+    var onBackgroundWorkFinished: () -> Void = {}
     /// Fired with a HUD-facing status string and whether it's a terminal
     /// (resting) state — the HUD auto-hides on terminal statuses and stays up
     /// through in-flight/progress ones.
@@ -47,7 +54,8 @@ final class PracticeController {
     }
 
     func toggle() {
-        isRecording ? stop() : start()
+        guard !isStopping else { return }
+        if isRecording { Task { await stop() } } else { start() }
     }
 
     private func start() {
@@ -62,6 +70,12 @@ final class PracticeController {
         do {
             try recorder.start()
             isRecording = true
+            limitTask?.cancel()
+            limitTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(300))
+                guard !Task.isCancelled else { return }
+                await self?.stop()
+            }
             Diag.log("practice: recording started \(sessionID)")
         } catch {
             Diag.log("practice: failed to start recording — \(error.localizedDescription)")
@@ -69,12 +83,17 @@ final class PracticeController {
         }
     }
 
-    private func stop() {
+    private func stop() async {
         guard isRecording else { return }
-        isRecording = false
-
-        let (samples, envelope) = recorder.stopWithEnvelope()
-        let duration = Date().timeIntervalSince(startedAt)
+        isStopping = true
+        defer { isStopping = false; isRecording = false; onRecordingStopped() }
+        limitTask?.cancel()
+        let samples: [Float]
+        let envelope: [Float]
+        do { (samples, envelope) = try await recorder.stopWithEnvelope() }
+        catch { onStatus("Audio conversion failed", true); return }
+        guard !samples.isEmpty else { onStatus("No audio captured", true); return }
+        let duration = Double(samples.count) / 16_000
         let filename = "\(sessionID.uuidString).wav"
         let prompt = currentPrompt
 
@@ -98,7 +117,12 @@ final class PracticeController {
         sessionsChanged()
         onStatus("Saved, transcribing…", false)
 
-        Task { await self.transcribe(session: session, samples: samples, envelope: envelope) }
+        backgroundWork += 1
+        Task {
+            await self.transcribe(session: session, samples: samples, envelope: envelope)
+            backgroundWork -= 1
+            onBackgroundWorkFinished()
+        }
     }
 
     private func transcribe(session: PracticeSession, samples: [Float], envelope: [Float]) async {
@@ -144,6 +168,8 @@ final class PracticeController {
     func requestCoachFeedback(for id: UUID) async {
         guard var s = store.all.first(where: { $0.id == id }),
               let transcript = s.transcript, let metrics = s.metrics else { return }
+        backgroundWork += 1
+        defer { backgroundWork -= 1; onBackgroundWorkFinished() }
         onStatus("Asking the coach…", false)
         do {
             let messages = TranscriptCleaner.coachPrompt(
@@ -170,7 +196,7 @@ final class PracticeController {
 
     func savePrompts() {
         do {
-            try prompts.encoded().write(to: URL(fileURLWithPath: Paths.promptsFile))
+            try prompts.encoded().write(to: URL(fileURLWithPath: Paths.promptsFile), options: .atomic)
         } catch {
             Diag.log("practice: failed to save prompts — \(error.localizedDescription)")
         }
@@ -178,7 +204,7 @@ final class PracticeController {
 
     private func persist() {
         do {
-            try store.encoded().write(to: URL(fileURLWithPath: Paths.sessionsFile))
+            try store.encoded().write(to: URL(fileURLWithPath: Paths.sessionsFile), options: .atomic)
         } catch {
             Diag.log("practice: failed to save sessions — \(error.localizedDescription)")
         }

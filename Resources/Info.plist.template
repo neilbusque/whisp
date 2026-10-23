@@ -5,13 +5,14 @@
   <key>CFBundleExecutable</key><string>Whisp</string>
   <key>CFBundleIdentifier</key><string>com.busqueneil.whisp</string>
   <key>CFBundleName</key><string>Whisp</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>0.6.1</string>
+  <key>CFBundleVersion</key><string>7</string>
+  <key>CFBundleIconFile</key><string>Whisp</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Whisp records your voice locally to transcribe it into text.</string>
+  <string>Whisp records while you hold Fn. OpenAI mode streams dictation audio for transcription; on-Mac mode and practice keep audio local.</string>
   <!-- Paste is performed via CGEvent (Accessibility), granted in System Settings; no Info.plist key applies. -->
 </dict>
 </plist>

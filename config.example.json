@@ -1,9 +1,15 @@
 {
-  "deepseekKey": "sk-your-key-here",
+  "openaiKey": "",
+  "transcriptionMode": "local",
+  "transcriptionModel": "gpt-live-transcribe",
+  "textModel": "gpt-4.1-nano",
   "hotkey": "fn",
+  "cleanupMode": "fast",
   "practiceHotkey": "ctrl+opt+cmd+r",
-  "whisperModel": "ggml-base.en",
+  "whisperModel": "ggml-small.en",
   "snippetsPath": "~/.whisp/snippets.json",
   "pauseThresholdSec": 1.0,
-  "silenceRMSThreshold": 0.06
+  "silenceRMSThreshold": 0.06,
+  "keepHistory": true,
+  "saveVoiceExamples": false
 }

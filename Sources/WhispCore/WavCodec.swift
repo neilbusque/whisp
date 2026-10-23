@@ -39,7 +39,7 @@ public enum WavCodec {
         u32(dataBytes)
 
         for s in samples {
-            let clamped = max(-1.0, min(1.0, s))
+            let clamped = s.isFinite ? max(-1.0, min(1.0, s)) : 0
             let i = Int16(clamped * 32_767)
             withUnsafeBytes(of: i.littleEndian) { d.append(contentsOf: $0) }
         }

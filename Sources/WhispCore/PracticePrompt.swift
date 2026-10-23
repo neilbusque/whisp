@@ -55,7 +55,7 @@ public final class PromptStore {
                        text: "90 seconds. Lead with the result, not the resume."),
         PracticePrompt(title: "Walk me through a campaign you ran",
                        text: "Situation, what you changed, the number it moved, what you'd do differently."),
-        PracticePrompt(title: "Niruron pitch",
+        PracticePrompt(title: "Pitch an idea",
                        text: "60 seconds. Who it's for, the problem, the offer, the proof."),
     ]
 }

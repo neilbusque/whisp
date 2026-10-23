@@ -10,13 +10,13 @@ final class HUDWindow {
     private let glyph = NSImageView()
     private let label = NSTextField(labelWithString: "")
     private let wave = WaveformView(frame: .zero)
-    private let sheen = CAGradientLayer()
     private var hideWork: Task<Void, Never>?
 
-    private static let cardWidth: CGFloat = 248
-    private static let cardHeight: CGFloat = 46
-    private static let radius: CGFloat = 23
-    private static let shownAlpha: CGFloat = 0.9   // reduced opacity / translucent glass
+    private static let cardWidth: CGFloat = 360
+    private static let cardHeight: CGFloat = 56
+    private static let radius: CGFloat = 28
+    // Keep foreground content crisp; the material supplies translucency.
+    private static let shownAlpha: CGFloat = 1
 
     init() {
         window = NSWindow(
@@ -25,35 +25,40 @@ final class HUDWindow {
         window.level = .floating
         window.isOpaque = false
         window.backgroundColor = .clear
+        window.appearance = NSAppearance(named: .darkAqua)
         window.hasShadow = true
         window.ignoresMouseEvents = true
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         // Frosted glass base.
-        let blur = NSVisualEffectView()
+        let bounds = NSRect(x: 0, y: 0, width: Self.cardWidth, height: Self.cardHeight)
+        let blur = NSVisualEffectView(frame: bounds)
         blur.material = .hudWindow
         blur.blendingMode = .behindWindow
         blur.state = .active
-        blur.appearance = NSAppearance(named: .vibrantDark)
+        blur.appearance = NSAppearance(named: .darkAqua)
+        // Core Animation cornerRadius alone does not mask the WindowServer's
+        // behind-window material or its shadow. Give AppKit the actual alpha
+        // silhouette so everything outside the pill stays transparent.
+        let radius = Self.radius
+        blur.maskImage = NSImage(size: bounds.size, flipped: false) { rect in
+            NSColor.white.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
         blur.wantsLayer = true
         blur.layer?.cornerRadius = Self.radius
         blur.layer?.cornerCurve = .continuous
         blur.layer?.masksToBounds = true
         blur.layer?.borderWidth = 0.5
-        blur.layer?.borderColor = NSColor(white: 1, alpha: 0.16).cgColor
+        blur.layer?.borderColor = NSColor(white: 1, alpha: 0.10).cgColor
         window.contentView = blur
 
-        // Glassmorphism layers: a faint dark tint to keep text legible while
-        // translucent, plus a top sheen for depth. Below the content, above blur.
+        // Neutral charcoal keeps the live status legible over any application.
         let glass = NSView(frame: NSRect(x: 0, y: 0, width: Self.cardWidth, height: Self.cardHeight))
         glass.wantsLayer = true
-        glass.layer?.backgroundColor = Theme.ink.withAlphaComponent(0.14).cgColor
+        glass.layer?.backgroundColor = Theme.ink.withAlphaComponent(0.84).cgColor
         glass.autoresizingMask = [.width, .height]
-        sheen.frame = glass.bounds
-        sheen.colors = [NSColor(white: 1, alpha: 0.14).cgColor, NSColor(white: 1, alpha: 0).cgColor]
-        sheen.startPoint = CGPoint(x: 0.5, y: 1.0)
-        sheen.endPoint = CGPoint(x: 0.5, y: 0.45)
-        glass.layer?.addSublayer(sheen)
         blur.addSubview(glass)
 
         glyph.translatesAutoresizingMaskIntoConstraints = false
@@ -63,10 +68,12 @@ final class HUDWindow {
 
         label.translatesAutoresizingMaskIntoConstraints = false
         label.textColor = Theme.mist
-        label.font = Theme.rounded(13, .semibold)
+        label.font = NSFont.systemFont(ofSize: 13, weight: .medium)
         label.backgroundColor = .clear
+        label.drawsBackground = false
         label.isBezeled = false
-        label.lineBreakMode = .byTruncatingTail
+        label.lineBreakMode = .byWordWrapping
+        label.maximumNumberOfLines = 2
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         wave.translatesAutoresizingMaskIntoConstraints = false

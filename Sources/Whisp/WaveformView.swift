@@ -21,7 +21,6 @@ final class WaveformView: NSView {
     private var phase: CGFloat = 0
     private var anim: Task<Void, Never>?
     private var mode: Mode = .idle
-    private var logCounter = 0
 
     override init(frame: NSRect) {
         let n = 16
@@ -42,10 +41,6 @@ final class WaveformView: NSView {
         let clamped = max(0, min(1, CGFloat(level)))
         let curved = min(1, pow(clamped, 0.55) * 1.6)   // gain so speech clearly drives the bars
         targetLevel = max(targetLevel, curved)
-        logCounter += 1
-        if logCounter % 20 == 0 {
-            Diag.log("wave.level in=\(String(format: "%.3f", Double(level))) target=\(String(format: "%.3f", Double(targetLevel)))")
-        }
         // With Reduce Motion there's no loop, so map straight to the bars.
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             for i in 0..<barCount {
@@ -56,6 +51,7 @@ final class WaveformView: NSView {
     }
 
     func setMode(_ newMode: Mode) {
+        guard mode != newMode else { return }
         mode = newMode
         anim?.cancel()
         anim = nil
@@ -123,9 +119,7 @@ final class WaveformView: NSView {
         let gap: CGFloat = 2.5
         let barW = max(1, (w - gap * CGFloat(barCount - 1)) / CGFloat(barCount))
 
-        let colors = [Theme.iris.cgColor, Theme.aqua.cgColor] as CFArray
-        guard let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                    colors: colors, locations: [0, 1]) else { return }
+        ctx.setFillColor(Theme.iris.cgColor)
 
         for i in 0..<barCount {
             let amp = max(WaveformView.baseline, min(1, barValues[i]))
@@ -137,9 +131,7 @@ final class WaveformView: NSView {
                               cornerHeight: barW / 2, transform: nil)
             ctx.saveGState()
             ctx.addPath(path)
-            ctx.clip()
-            ctx.drawLinearGradient(grad, start: CGPoint(x: 0, y: 0),
-                                   end: CGPoint(x: w, y: 0), options: [])
+            ctx.fillPath()
             ctx.restoreGState()
         }
     }

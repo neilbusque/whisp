@@ -2,13 +2,8 @@
 # Vendors whisper.cpp + ggml source into Sources/CWhisper so the repo builds
 # offline as a SwiftPM C/C++ target, and downloads the default model.
 #
-# NOTE ON APPROACH (Task 7): this Mac has Command Line Tools only (no Xcode.app),
-# so the Metal shader compiler (`xcrun metal`) is ABSENT. We therefore vendor the
-# CPU backend only (Accelerate-accelerated). The model is kept warm in RAM by
-# WhisperTranscriber; no per-call reload. See .superpowers/sdd/task-7-report.md.
-#
-# The file list below is tailored to the ACTUAL v1.7.4 layout (it differs from
-# the plan brief: backend-reg/threading/opt sources are new, ggml-cpu is a dir).
+# The CPU backend uses Accelerate and builds with Command Line Tools alone.
+# The file list below is pinned to the v1.7.4 source layout.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -25,6 +20,7 @@ git clone --depth 1 --branch "$WC_VER" https://github.com/ggerganov/whisper.cpp 
 # Clean any prior vendored tree (but keep our hand-written include/module.modulemap).
 rm -rf "$DEST/src" "$DEST/ggml"
 mkdir -p "$DEST/include"
+cp "$TMP/wc/LICENSE" "$DEST/LICENSE"
 
 # ---- whisper core ----
 mkdir -p "$DEST/src"
@@ -78,13 +74,14 @@ echo "✓ Vendored whisper.cpp $WC_VER (CPU backend) into $DEST"
 
 # ---- default model ----
 mkdir -p "$HOME/.whisp/models"
-MODEL="$HOME/.whisp/models/ggml-base.en.bin"
+MODEL="$HOME/.whisp/models/ggml-small.en.bin"
 if [ -f "$MODEL" ]; then
   echo "✓ model already present at $MODEL"
 else
-  echo "› downloading ggml-base.en.bin (~150MB) ..."
-  curl -L --fail \
-    https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin \
-    -o "$MODEL"
+  echo "› downloading ggml-small.en.bin (~466MB) ..."
+  curl -L --fail --retry 2 \
+    https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin \
+    -o "$TMP/ggml-small.en.bin"
+  mv "$TMP/ggml-small.en.bin" "$MODEL"
   echo "✓ model at $MODEL"
 fi

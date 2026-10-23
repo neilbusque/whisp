@@ -2,10 +2,17 @@ import Foundation
 import WhispCore
 
 enum Paths {
-    static var dir: String { NSString(string: "~/.whisp").expandingTildeInPath }
+    static var dir: String {
+        let args = CommandLine.arguments
+        if let flag = args.firstIndex(of: "--data-dir"), args.indices.contains(flag + 1) {
+            return URL(fileURLWithPath: args[flag + 1]).standardizedFileURL.path
+        }
+        return NSString(string: "~/.whisp").expandingTildeInPath
+    }
     static var configFile: String { dir + "/config.json" }
     static var snippetsFile: String { dir + "/snippets.json" }
     static var vocabularyFile: String { dir + "/vocabulary.txt" }
+    static var contextFile: String { dir + "/context.md" }
     static var modelsDir: String { dir + "/models" }
     static var recordingsDir: String { dir + "/recordings" }
     static var sessionsFile: String { dir + "/sessions.json" }
@@ -43,12 +50,24 @@ enum Paths {
     /// Creates `~/.whisp` + `~/.whisp/models`, and seeds config.json /
     /// snippets.json with sensible defaults only if they don't already exist.
     /// Never overwrites a user's existing files.
-    static func ensureSeeded() throws {
+    static func ensureSeeded(in directory: String = dir) throws {
         let fm = FileManager.default
-        try fm.createDirectory(atPath: modelsDir, withIntermediateDirectories: true)
+        let configFile = directory + "/config.json"
+        let snippetsFile = directory + "/snippets.json"
+        let vocabularyFile = directory + "/vocabulary.txt"
+        let contextFile = directory + "/context.md"
+        let fillersFile = directory + "/fillers.txt"
+        let promptsFile = directory + "/prompts.json"
+        let sessionsFile = directory + "/sessions.json"
+        try fm.createDirectory(atPath: directory, withIntermediateDirectories: true,
+                               attributes: [.posixPermissions: 0o700])
+        try fm.createDirectory(atPath: directory + "/models", withIntermediateDirectories: true)
 
         if !fm.fileExists(atPath: configFile) {
-            try WhispConfig.defaults.encoded().write(to: URL(fileURLWithPath: configFile))
+            var seed = WhispConfig.defaults
+            seed.snippetsPath = snippetsFile
+            try seed.encoded().write(to: URL(fileURLWithPath: configFile), options: .atomic)
+            try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configFile)
         }
         if !fm.fileExists(atPath: snippetsFile) {
             let seed = [
@@ -64,8 +83,11 @@ enum Paths {
         if !fm.fileExists(atPath: vocabularyFile) {
             try seedVocabulary.write(toFile: vocabularyFile, atomically: true, encoding: .utf8)
         }
+        if !fm.fileExists(atPath: contextFile) {
+            try seedContext.write(toFile: contextFile, atomically: true, encoding: .utf8)
+        }
 
-        try fm.createDirectory(atPath: recordingsDir, withIntermediateDirectories: true)
+        try fm.createDirectory(atPath: directory + "/recordings", withIntermediateDirectories: true)
 
         if !fm.fileExists(atPath: fillersFile) {
             try FillerList.seed.write(toFile: fillersFile, atomically: true, encoding: .utf8)
@@ -89,66 +111,35 @@ enum Paths {
             .filter { !$0.isEmpty && !$0.hasPrefix("#") }
     }
 
-    /// Marketing + brand terms so Whisp hears Neil's jargon correctly out of the box.
+    static func loadContext() -> String {
+        (try? String(contentsOfFile: contextFile, encoding: .utf8)) ?? seedContext
+    }
+
+    /// A small neutral starting point. Personal terms belong in the user's file.
     private static let seedVocabulary = """
-    # Whisp vocabulary — one term per line. Lines starting with # are ignored.
-    # These bias Whisper's transcription and tell the cleanup not to "correct" them.
-    # Add your own names, brands, clients, and jargon below.
+    # Whisp vocabulary: one term per line. Lines starting with # are ignored.
+    # Add names, brands, technical terms, and their preferred spelling below.
+    # These help transcription and preserve your spelling during cleanup.
 
-    # Brands & names
-    Niruron
-    Busque
-    busqueneil
-    Neil Busque
     Whisp
-    Orbit
-    Hatch
-    DeepSeek
-    GoHighLevel
-    GHL
-    Klaviyo
-    HubSpot
-    Shopify
-    Meta Ads
-    Google Ads
+    OpenAI
+    ChatGPT
 
-    # Marketing / SEO / paid search
-    ROAS
-    ROI
-    CPC
-    CPM
-    CTR
-    CPA
-    CPL
-    SERP
-    SEO
-    SEM
-    PPC
-    backlink
-    backlinks
-    retargeting
-    remarketing
-    lookalike audience
-    UTM
-    funnel
-    landing page
-    lead magnet
-    nurture sequence
-    cold email
-    conversion rate
-    cost per acquisition
-    attribution
-    impressions
-    click-through rate
-    organic traffic
-    paid search
-    programmatic
-    schema markup
-    canonical
-    anchor text
-    long-tail keyword
-    A/B test
+    """
 
+    private static let seedContext = """
+    # My writing context
+
+    ## About me
+    <!-- Optional: add your name, role, and background. Leave blank if unnecessary. -->
+
+    ## What I work on
+    <!-- Optional: add relevant topics, projects, or terminology. -->
+
+    ## How my writing should sound
+    Use clear, natural language. Preserve my intended meaning and real facts, names,
+    numbers, links, promises, and constraints. Do not invent claims or results.
+    <!-- Optional: add your preferred tone, audience, and formatting. -->
     """
 
     static func loadConfig() throws -> WhispConfig {
