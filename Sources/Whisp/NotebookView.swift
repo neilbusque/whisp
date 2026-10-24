@@ -100,7 +100,7 @@ private struct NotePage: View {
                 Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }.help("Delete note")
             }.buttonStyle(.plain).padding(.bottom, 28)
             TextField("Untitled", text: $draft.title).textFieldStyle(.plain).font(.system(size: 28, weight: .semibold))
-                .padding(.bottom, 18)
+                .frame(height: 40).layoutPriority(1).padding(.bottom, 18)
             HStack(spacing: 18) {
                 Label { Text(note.createdAt, format: .dateTime.month(.abbreviated).day().year().hour().minute()) } icon: { Image(systemName: "calendar") }
                 if note.duration > 0 { Label(String(format: "%d:%02d", Int(note.duration) / 60, Int(note.duration) % 60), systemImage: "clock") }

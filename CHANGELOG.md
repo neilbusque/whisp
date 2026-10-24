@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1 · 2026-10-24
+
+- Keep note titles fully visible when reading long pages in compact windows.
+
 ## 0.7.0 · 2026-10-24
 
 - Add a local SQLite notebook with dated Markdown pages, voice recording, audio playback, search, and export.
