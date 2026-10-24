@@ -5,8 +5,8 @@
   <key>CFBundleExecutable</key><string>Whisp</string>
   <key>CFBundleIdentifier</key><string>com.busqueneil.whisp</string>
   <key>CFBundleName</key><string>Whisp</string>
-  <key>CFBundleShortVersionString</key><string>0.6.7</string>
-  <key>CFBundleVersion</key><string>13</string>
+  <key>CFBundleShortVersionString</key><string>0.7.0</string>
+  <key>CFBundleVersion</key><string>14</string>
   <key>CFBundleIconFile</key><string>Whisp</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>

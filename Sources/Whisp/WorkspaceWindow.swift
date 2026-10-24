@@ -2,14 +2,17 @@ import AppKit
 import ApplicationServices
 import AVFoundation
 import SwiftUI
+import Combine
 import WhispCore
 
 enum WorkspaceRoute: String, CaseIterable, Identifiable {
-    case home, history, corrections, snippets, practice, settings
+    case home, notes, memory, history, corrections, snippets, practice, settings
     var id: String { rawValue }
     var title: String {
         switch self {
         case .home: return "Dictation"
+        case .notes: return "Notes"
+        case .memory: return "Memory"
         case .history: return "Recent dictations"
         case .corrections: return "Corrections"
         case .snippets: return "Snippets"
@@ -20,6 +23,8 @@ enum WorkspaceRoute: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .home: return "waveform"
+        case .notes: return "book.closed"
+        case .memory: return "brain"
         case .history: return "clock"
         case .corrections: return "text.badge.checkmark"
         case .snippets: return "text.bubble"
@@ -39,6 +44,12 @@ final class WorkspaceState: ObservableObject {
     @Published var practiceLoading = false
     @Published var practiceError: String?
     @Published var selectedEntry: UUID?
+    private var notebookChanges: AnyCancellable?
+    @Published var notebook: NotebookModel? {
+        didSet {
+            notebookChanges = notebook?.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
+        }
+    }
     var loadPractice: (() -> Void)?
     var recordPractice: (() -> Void)?
     var openContext: (() -> Void)?
@@ -87,6 +98,12 @@ private struct WorkspaceView: View {
     private var learningActive: Bool { state.route == .corrections || state.route == .history }
 
     var body: some View {
+        GeometryReader { geometry in
+            workspaceContent.frame(width: geometry.size.width, height: geometry.size.height)
+        }
+    }
+
+    private var workspaceContent: some View {
         HStack(spacing: 0) {
             sidebar.frame(width: 210)
             Divider()
@@ -100,6 +117,14 @@ private struct WorkspaceView: View {
                                      embedded: true, active: learningActive, requestedEntry: state.selectedEntry,
                                      onEntrySelected: { state.selectedEntry = $0 })
                             .workspaceDestination(learningActive)
+                    }
+                    if let notebook = state.notebook {
+                        if state.visited.contains(.notes) {
+                            NotebookView(model: notebook).workspaceDestination(state.route == .notes)
+                        }
+                        if state.visited.contains(.memory) {
+                            NotebookMemoryView(model: notebook).workspaceDestination(state.route == .memory)
+                        }
                     }
                     if state.visited.contains(.snippets) {
                         SnippetsView(path: snippetsPath)
@@ -122,7 +147,10 @@ private struct WorkspaceView: View {
         }
         .tint(Color.workspaceAccent)
         .environment(\.timeZone, TimeZone(identifier: "America/New_York")!)
-        .onChange(of: state.route) { _ in model.stopPlayback() }
+        .onChange(of: state.route) { _ in model.stopPlayback(); state.notebook?.stopPlayback() }
+        .alert("Notebook", isPresented: Binding(get: { state.notebook?.error != nil }, set: { if !$0 { state.notebook?.error = nil } })) {
+            Button("OK") { state.notebook?.error = nil }
+        } message: { Text(state.notebook?.error ?? "") }
         .onReceive(NotificationCenter.default.publisher(for: .whispWorkspaceRoute)) { note in
             if let route = note.object as? WorkspaceRoute { state.select(route) }
         }
@@ -149,7 +177,7 @@ private struct WorkspaceView: View {
                         .font(.system(size: 13)).frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 12).padding(.vertical, 10).contentShape(Rectangle())
                 }.buttonStyle(.plain).foregroundStyle(.secondary)
-                    .help("Edit the background and writing preferences used for rewrites")
+                    .help("Edit your background and writing preferences")
                 navButton(.settings)
             }.padding(.horizontal, 10).padding(.bottom, 16)
         }.background(Color.workspaceSidebar)

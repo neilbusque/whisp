@@ -83,13 +83,13 @@ public final class SpeechPipeline: @unchecked Sendable {
         switch edit {
         case .command: return nil
         case .interpret(let text):
-            return TranscriptCleaner.dictationPrompt(raw: text, vocabulary: effectiveVocabulary)
+            return TranscriptCleaner.dictationPrompt(raw: text, vocabulary: effectiveVocabulary, profileContext: profileContext)
         case .dictation(let text):
             if case .interpret(let draft) = SpokenEdit.parse(text) {
-                return TranscriptCleaner.dictationPrompt(raw: draft, vocabulary: effectiveVocabulary)
+                return TranscriptCleaner.dictationPrompt(raw: draft, vocabulary: effectiveVocabulary, profileContext: profileContext)
             }
             return cleanupMode == .smart
-                ? TranscriptCleaner.polishPrompt(raw: text, vocabulary: effectiveVocabulary) : nil
+                ? TranscriptCleaner.polishPrompt(raw: text, vocabulary: effectiveVocabulary, profileContext: profileContext) : nil
         }
     }
 
@@ -163,7 +163,7 @@ public final class SpeechPipeline: @unchecked Sendable {
                     output = try await cleanOrFallback(
                         TranscriptCleaner.aiTemplatePrompt(template: m.snippet.content,
                                                            dictation: m.remainder,
-                                                           vocabulary: effectiveVocabulary),
+                                                           vocabulary: effectiveVocabulary, profileContext: profileContext),
                         fallback: TranscriptCleaner.offlineClean(m.remainder))
                 }
             } else {
@@ -190,7 +190,7 @@ public final class SpeechPipeline: @unchecked Sendable {
                     // Never paste a spoken editing instruction if the model
                     // fails. The user can retry without corrupting the draft.
                     output = try await completeRequired(
-                        TranscriptCleaner.dictationPrompt(raw: dictation, vocabulary: effectiveVocabulary))
+                        TranscriptCleaner.dictationPrompt(raw: dictation, vocabulary: effectiveVocabulary, profileContext: profileContext))
                 case .dictation(let dictation):
                     output = try await prepareDictation(dictation, vocabulary: effectiveVocabulary)
                 }
@@ -219,14 +219,14 @@ public final class SpeechPipeline: @unchecked Sendable {
         if case .interpret(let dictation) = SpokenEdit.parse(text) {
             onStatus(.polishing)
             return try await completeRequired(
-                TranscriptCleaner.dictationPrompt(raw: dictation, vocabulary: vocabulary))
+                TranscriptCleaner.dictationPrompt(raw: dictation, vocabulary: vocabulary, profileContext: profileContext))
         }
         switch cleanupMode {
         case .fast: return TranscriptCleaner.offlineClean(text)
         case .smart:
             onStatus(.polishing)
             return try await cleanOrFallback(
-                TranscriptCleaner.polishPrompt(raw: text, vocabulary: vocabulary),
+                TranscriptCleaner.polishPrompt(raw: text, vocabulary: vocabulary, profileContext: profileContext),
                 fallback: TranscriptCleaner.offlineClean(text))
         }
     }

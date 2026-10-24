@@ -5,6 +5,9 @@ import AVFoundation
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let workspace = WorkspaceState()
+    private let notebook = NotebookModel()
+    private var recordingNote = false
+    private var notebookRefresh: Timer?
     private var statusItem: NSStatusItem!
     private var statusMenuItem: NSMenuItem!
     private var copyLastItem: NSMenuItem!
@@ -50,6 +53,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("Whisp seed/config error: \(error)")
         }
 
+        workspace.notebook = notebook
+        notebook.onContextChanged = { [weak self] in self?.setupPipeline() }
+        notebook.toggleRecording = { [weak self] in self?.toggleNoteRecording() }
+        notebookRefresh = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.notebook.refresh() }
+        }
         workspace.loadPractice = { [weak self] in self?.preparePractice() }
         workspace.recordPractice = { [weak self] in self?.togglePractice() }
         workspace.openContext = { [weak self] in self?.openContext() }
@@ -77,12 +86,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkey = HotkeyMonitor(
             onPress: { [weak self] in
                 Task { @MainActor in
+                    guard self?.recordingNote != true else { return }
                     self?.fnHeld = true
                     await self?.startRecording()
                 }
             },
             onRelease: { [weak self] in
                 Task { @MainActor in
+                    guard self?.recordingNote != true else { return }
                     self?.fnHeld = false
                     self?.stopAndProcess()
                 }
@@ -91,6 +102,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--show-learning") { openLearning() }
         if CommandLine.arguments.contains("--show-workspace") { openWorkspace() }
         if CommandLine.arguments.contains("--show-settings") { openSettings() }
+        if CommandLine.arguments.contains("--show-notes") { openNotes() }
+        if CommandLine.arguments.contains("--show-memory") { openMemory() }
     }
 
     // MARK: - Pipeline
@@ -108,7 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let nextConfig = try Paths.loadConfig().validated()
             let snippets = try SnippetStore.load(from: Data(contentsOf: URL(fileURLWithPath: NSString(string: nextConfig.snippetsPath).expandingTildeInPath)))
             let vocab = Paths.loadVocabulary()
-            let profileContext = Paths.loadContext()
+            let profileContext = notebook.writingContext()
             let hints = learning.data.rules.filter(\.enabled).map(\.intended) + vocab
             let local: LazyWhisperTranscriber
             if let resident = self.transcriber, config.whisperModel == nextConfig.whisperModel {
@@ -272,10 +285,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Recording flow
 
-    private func startRecording() async {
+    @objc private func openNotes() {
+        WorkspaceWindow.shared.show(model: learning, state: workspace, route: .notes)
+    }
+    @objc private func openMemory() {
+        WorkspaceWindow.shared.show(model: learning, state: workspace, route: .memory)
+    }
+    @objc private func toggleNoteRecording() {
+        if recordingNote && recording { fnHeld = false; stopAndProcess(); return }
+        guard !recording, !startingRecording, !processing else {
+            notebook.error = "Finish the current recording first."; return
+        }
+        openNotes()
+        Task { @MainActor in
+            fnHeld = true
+            await startRecording(asNote: true)
+            fnHeld = false
+        }
+    }
+    private func startRecording(asNote: Bool = false) async {
         guard fnHeld, !recording, !startingRecording else { return }
+        notebook.stopPlayback()
+        learning.stopPlayback()
         startingRecording = true
-        defer { startingRecording = false; applyPendingReload() }
+        recordingNote = asNote
+        defer {
+            startingRecording = false
+            if !recording { recordingNote = false }
+            applyPendingReload()
+        }
         if processing { hud.show(.error("Finishing previous dictation")); return }
         if loadingModel { hud.show(.error("Loading speech model")); return }
         guard pipeline != nil else { hud.show(.error("Check Whisp Settings")); return }
@@ -296,7 +334,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             activeSpeculationID = nil
             return
         }
-        inserter.beginSession()
+        if !asNote { inserter.beginSession() }
         do {
             if config.transcriptionMode == .openai {
                 let hints = learning.data.rules.filter(\.enabled).map(\.intended) + Paths.loadVocabulary()
@@ -305,7 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let live = OpenAIRealtimeTranscriber(apiKey: config.openaiKey, vocabulary: hints,
                     model: config.transcriptionModel, onPartial: { [weak self] text in
                         Task { @MainActor in
-                            guard let self, let pipeline = previewPipeline,
+                            guard !asNote, let self, let pipeline = previewPipeline,
                                   let cleaner = previewCleaner, let speculationID,
                                   self.activeSpeculationID == speculationID else { return }
                             self.partialTask?.cancel()
@@ -323,12 +361,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try recorder.start()
             }
             recording = true
+            notebook.recording = asNote
+            notebook.recordingStartedAt = asNote ? Date() : nil
             hud.show(.listening)
-            setStatusTitle("Whisp — listening")
+            setStatusTitle(asNote ? "Whisp — recording note" : "Whisp — listening")
             updateMenuIcon("mic.fill")
             recordingLimit?.cancel()
             recordingLimit = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(300))
+                try? await Task.sleep(for: .seconds(asNote ? 900 : 300))
                 guard !Task.isCancelled else { return }
                 self?.stopAndProcess()
             }
@@ -346,7 +386,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func stopAndProcess() {
         guard recording else { return }
+        let isNote = recordingNote
         recording = false
+        notebook.recording = false
+        notebook.recordingStartedAt = nil
+        notebook.finishing = isNote
         processing = true
         processingStarted = Date()
         resultModel = config.transcriptionMode == .openai ? config.transcriptionModel : config.whisperModel
@@ -357,7 +401,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 realtime?.abort(); realtime = nil
                 partialTask?.cancel(); partialTask = nil
                 activeSpeculationID = nil
-                savePendingHistory()
+                if !isNote { savePendingHistory() }
+                recordingNote = false
+                notebook.finishing = false
                 pendingSamples = []
                 processing = false
                 applyPendingReload()
@@ -371,6 +417,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard stopped.hasAudio else {
                     hud.show(.error("No audio captured"))
                     learning.error = "No microphone audio arrived. Check the input device in Sound settings and try again."
+                    await speculativeCleaner?.cancel()
+                    return
+                }
+                if isNote {
+                    let samples = try await stopped.samples.value
+                    var raw = ""
+                    if let realtime {
+                        do { raw = try await realtime.finish(timeout: 8) }
+                        catch { realtime.abort() }
+                    }
+                    if raw.isEmpty, let transcriber {
+                        do { raw = try await transcriber.transcribe(samples) }
+                        catch { notebook.notice = "Recording saved. Transcription was unavailable." }
+                    }
+                    try Task.checkCancellation()
+                    let corrected = CorrectionEngine(rules: learning.data.rules).apply(raw) {
+                        VocabularyCorrector.correct($0, vocabulary: Paths.loadVocabulary())
+                    }
+                    let cleaner: Cleaning? = config.openaiKey.isEmpty ? nil : OpenAICleaner(apiKey: config.openaiKey, model: config.textModel, noteOrganization: true)
+                    try notebook.capture(transcript: corrected, samples: samples, cleaner: cleaner)
+                    hud.show(.done(""))
+                    setStatusTitle("Whisp — note saved")
+                    updateMenuIcon("waveform")
                     await speculativeCleaner?.cancel()
                     return
                 }
@@ -466,6 +535,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(statusMenuItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Open Whisp…", action: #selector(openWorkspace), keyEquivalent: "1"))
+        menu.addItem(NSMenuItem(title: "Record idea…", action: #selector(toggleNoteRecording), keyEquivalent: "r"))
+        menu.addItem(NSMenuItem(title: "Notes…", action: #selector(openNotes), keyEquivalent: "n"))
+        menu.addItem(NSMenuItem(title: "Memory…", action: #selector(openMemory), keyEquivalent: "m"))
         menu.addItem(NSMenuItem(title: "Corrections…", action: #selector(openLearning), keyEquivalent: "t"))
         menu.addItem(NSMenuItem(title: "Recent Dictations…", action: #selector(openHistory), keyEquivalent: "h"))
         copyLastItem = NSMenuItem(title: "Copy Last Dictation", action: #selector(copyLastDictation), keyEquivalent: "")
@@ -484,7 +556,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateStatusTitle(_ status: PipelineStatus) {
         switch status {
         case .idle:         setStatusTitle("Whisp — idle");          updateMenuIcon("waveform")
-        case .listening:    setStatusTitle("Whisp — listening");     updateMenuIcon("mic.fill")
+        case .listening:    setStatusTitle(recordingNote ? "Whisp — recording note" : "Whisp — listening");     updateMenuIcon("mic.fill")
         case .transcribing: setStatusTitle("Whisp — transcribing");  updateMenuIcon("waveform")
         case .polishing:    setStatusTitle("Whisp — polishing");     updateMenuIcon("sparkles")
         case .done:         setStatusTitle("Whisp — idle");          updateMenuIcon("waveform")
@@ -531,7 +603,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openContext() {
-        NSWorkspace.shared.open(URL(fileURLWithPath: Paths.contextFile))
+        notebook.memoryTab = 1
+        openMemory()
     }
 
     @objc private func openSettings() {
@@ -584,14 +657,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func quit() {
+        notebookRefresh?.invalidate()
         recordingLimit?.cancel()
-        workTask?.cancel()
+        let finishingNote = recordingNote
+        if recordingNote && recording { fnHeld = false; stopAndProcess() }
+        if !finishingNote { workTask?.cancel(); realtime?.abort() }
         partialTask?.cancel()
-        realtime?.abort()
         Task { @MainActor in
             await speculativeCleaner?.cancel()
             await workTask?.value
             await historyTask?.value
+            notebook.stop()
             NSApplication.shared.terminate(nil)
         }
     }

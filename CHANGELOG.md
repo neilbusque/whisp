@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0 · 2026-10-24
+
+- Add a local SQLite notebook with dated Markdown pages, voice recording, audio playback, search, and export.
+- Learn source-linked personal preferences and project context from notes, with edit, pause, and forget controls.
+- Add a local stdio MCP connector for assistants to search and update the notebook.
+- Keep original audio and transcripts when optional AI organization is unavailable.
+- Use saved writing context for automatic polish, interpreted corrections, and AI snippets as well as explicit rewrites.
+- Keep speculative polish and final dictation on the same context so exact-match reuse stays fast.
+- Treat profile context as background for names and style, preserving the current dictation and avoiding unsolicited personal details.
+- Document context reload behavior and which writing requests send it to OpenAI.
+
 ## 0.6.7 · 2026-10-23
 
 - Remove the completion checkmark from dictation and practice.

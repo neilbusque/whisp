@@ -14,6 +14,8 @@ else replaces that clipboard copy; **Copy Last Dictation** remains available in 
 - **Automatic polish:** remove fillers, fix grammar, and tighten rambling without changing your meaning.
 - **Voice edits:** change tone, shorten a draft, remove a selected phrase, or correct yourself mid-sentence.
 - **Personal vocabulary:** save recurring corrections and names without training a model.
+- **Notes and memory:** record ideas into dated local pages, keep the audio, and remember source-linked preferences and project context.
+- **Local assistant connection:** search and update the SQLite notebook through the included stdio MCP connector.
 - **Snippets:** expand a spoken keyword into saved text or an AI-generated template.
 - **Speaking practice:** record locally, review transcripts, and track pace, fillers, and pauses.
 
@@ -104,7 +106,24 @@ AI rewrites leave the target unchanged if the request fails or returns incomplet
 Quoted or discussed commands are treated as words.
 
 Open **Writing context** in the workspace or **Edit Writing Context…** in the menu bar
-to describe your preferred style. This file is included with explicit AI rewrites.
+to describe your preferred style, recurring projects, and names. This file is included
+with automatic AI polish, interpreted corrections, explicit rewrites, and AI snippets.
+Keep it concise for fast dictation. Changes take effect after restarting Whisp or
+saving Settings while idle. The file stays in your local profile and is sent to OpenAI
+with these writing requests; it is never part of the public source release.
+This is saved context, not automatic learning from your conversations.
+
+## Notes and memory
+
+Open **Notes → Record idea** to record a thought into Whisp instead of pasting it.
+Your dated page keeps editable Markdown, original words, and playable audio. Use
+**Memory** to review learned facts and edit **About me & projects**. Fn remains
+normal dictation. Notes record microphone audio for up to 15 minutes.
+
+The notebook uses local SQLite storage. AI organization and memory extraction use
+your configured OpenAI key; the original note remains available if AI fails.
+See [Notes, memory, and assistant connections](docs/notebook.md) for storage,
+privacy, learning controls, and the local Claude/Codex MCP connector.
 
 ## Speed
 
@@ -180,9 +199,10 @@ currently supports Fn only; invalid hotkey settings fall back to their defaults.
 | --- | --- |
 | Local recognition and ordinary Fast cleanup | No audio or transcript is sent by these operations. |
 | OpenAI streaming | Dictation audio and vocabulary hints go directly to OpenAI. |
-| Automatic polish and interpreted corrections | Transcript text and relevant vocabulary go to OpenAI. Partial transcripts may be sent before release. |
+| Automatic polish and interpreted corrections | Transcript text, writing context, and relevant vocabulary go to OpenAI. Partial transcripts may be sent before release. |
 | Explicit AI rewrites | Selected, recently inserted, or dictated target text, the instruction, writing context, and vocabulary go to OpenAI. |
-| AI snippets | The template, dictated details, and vocabulary go to OpenAI. |
+| AI snippets | The template, dictated details, writing context, and vocabulary go to OpenAI. |
+| Voice-note organization and memory extraction | The note transcript and writing context go to OpenAI. Original audio is kept locally; streaming recognition sends audio as described above. |
 | Practice feedback | Transcript, prompt title, and speaking metrics go to OpenAI when requested. |
 
 OpenAI handles API data under the terms and controls applicable to your account.
@@ -194,6 +214,7 @@ Your profile lives in `~/.whisp/`:
 - `config.json`: settings and your **plaintext API key**. Saving settings attempts to restrict this file to its owner. The key is not encrypted or stored in Keychain by Whisp.
 - `context.md`, `vocabulary.txt`, `snippets.json`: writing preferences, terms, and templates.
 - `learning.json`, `learning-audio/`: corrections and optional dictation examples.
+- `notebook.sqlite3`, `note-audio/`: personal notes, learned memory, and original voice recordings.
 - `recordings/`, `sessions.json`: practice recordings and reviews.
 - `whisp.log`: bounded diagnostic logs that omit dictated text.
 

@@ -42,6 +42,43 @@ import Foundation
         #expect(cleaner.lastMessages.last?.content.contains("um hello") == true)
     }
 
+    @Test(arguments: ["Send the project update tomorrow.",
+                      "Meet Thursday, no I mean Friday."])
+    func savedContextReachesFinalAndSpeculativeDictation(raw: String) async {
+        let cleaner = FakeCleaner(reply: "Edited draft.")
+        let inserter = FakeInserter()
+        let context = "My project is Example Studio. Keep updates concise."
+        let pipe = SpeechPipeline(
+            snippets: .init(snippets: []), transcriber: FakeTranscriber(raw),
+            cleaner: cleaner, inserter: inserter, profileContext: context,
+            onStatus: { _ in })
+        let preview = await pipe.previewMessages(for: raw)
+        await pipe.process(transcript: raw)
+        #expect(cleaner.lastMessages.first?.content.contains(context) == true)
+        #expect(preview == cleaner.lastMessages)
+        #expect(inserter.inserted == ["Edited draft."])
+    }
+
+    @Test func savedContextReachesAISnippetsButNotVerbatimSnippets() async {
+        for mode in [SnippetMode.ai, .verbatim] {
+            let cleaner = FakeCleaner(reply: "Generated draft.")
+            let inserter = FakeInserter()
+            let pipe = SpeechPipeline(
+                snippets: .init(snippets: [.init(keyword: "status update", mode: mode,
+                                                content: "Our work is ready.")]),
+                transcriber: FakeTranscriber("status update"),
+                cleaner: cleaner, inserter: inserter,
+                profileContext: "My project is Example Studio.", onStatus: { _ in })
+            await pipe.process(transcript: "status update")
+            if mode == .ai {
+                #expect(cleaner.lastMessages.first?.content.contains("Example Studio") == true)
+            } else {
+                #expect(cleaner.lastMessages.isEmpty)
+                #expect(inserter.inserted == ["Our work is ready."])
+            }
+        }
+    }
+
     @Test func fastCleanupStaysLocal() async {
         let cleaner = FakeCleaner(reply: "SHOULD-NOT-BE-USED")
         let inserter = FakeInserter()

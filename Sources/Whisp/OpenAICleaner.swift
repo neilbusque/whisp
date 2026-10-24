@@ -7,6 +7,7 @@ final class OpenAICleaner: Cleaning {
     private let apiKey: String
     private let model: String
     private let session: URLSession
+    private let noteOrganization: Bool
     private let endpoint = URL(string: "https://api.openai.com/v1/chat/completions")!
     private static let boundedSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
@@ -19,10 +20,18 @@ final class OpenAICleaner: Cleaning {
     }()
 
     init(apiKey: String, model: String = WhispConfig.defaultTextModel,
-         session: URLSession? = nil) {
+         session: URLSession? = nil, noteOrganization: Bool = false) {
         self.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         self.model = model
-        self.session = session ?? Self.boundedSession
+        self.noteOrganization = noteOrganization
+        if let session { self.session = session }
+        else if noteOrganization {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.waitsForConnectivity = false
+            configuration.timeoutIntervalForRequest = 30
+            configuration.timeoutIntervalForResource = 30
+            self.session = URLSession(configuration: configuration)
+        } else { self.session = Self.boundedSession }
     }
 
     private struct Request: Encodable {
@@ -56,7 +65,7 @@ final class OpenAICleaner: Cleaning {
                     max_completion_tokens: outputTokenBudget(for: messages), store: false))
         // Ordinary dictation has a local fallback; required rewrites report the
         // failure without pasting partial text. Avoid retries on the typing path.
-        request.timeoutInterval = 5
+        request.timeoutInterval = noteOrganization ? 30 : 5
 
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
@@ -81,7 +90,9 @@ final class OpenAICleaner: Cleaning {
         let userCharacters = messages.last(where: { $0.role == "user" })?.content.count ?? 0
         // Keep enough room for long rewrite selections rather than imposing a
         // short dictation-only limit that silently truncates edited paragraphs.
-        return min(4_096, max(512, userCharacters / 2))
+        return noteOrganization
+            ? min(8_192, max(2_048, userCharacters / 2 + 1_024))
+            : min(4_096, max(512, userCharacters / 2))
     }
 }
 

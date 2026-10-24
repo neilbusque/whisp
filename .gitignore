@@ -28,3 +28,10 @@ fillers.txt
 .claude/
 .codex/
 .superpowers/
+__pycache__/
+*.pyc
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+note-audio/
+backups/

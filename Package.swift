@@ -5,7 +5,8 @@ let package = Package(
     name: "Whisp",
     platforms: [.macOS(.v13)],
     targets: [
-        .target(name: "WhispCore"),
+        .systemLibrary(name: "CSQLite"),
+        .target(name: "WhispCore", dependencies: ["CSQLite"]),
         .target(name: "WhispAudio"),
         // Vendored whisper.cpp + ggml (v1.7.4), CPU backend only.
         // CLT-only Macs have no `metal` compiler, so the Metal backend is omitted;

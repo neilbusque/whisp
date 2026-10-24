@@ -44,6 +44,20 @@ import WhispCore
         #expect(output == "Complete rewrite.")
     }
 
+    @Test func noteOrganizationHasRoomForStructuredMemoriesWithoutSlowingDictation() async throws {
+        let transport = session { request in
+            #expect(request.timeoutInterval == 30)
+            let body = try #require(request.httpBody ?? Self.read(request.httpBodyStream))
+            let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            #expect(json["max_completion_tokens"] as? Int == 2_048)
+            #expect(json["store"] as? Bool == false)
+            return (200, try Self.response(text: "Organized note."))
+        }
+        defer { transport.invalidateAndCancel() }
+        _ = try await OpenAICleaner(apiKey: "sk-test", session: transport, noteOrganization: true)
+            .complete([ChatMessage(role: "user", content: "A short note.")])
+    }
+
     @Test func missingKeyFailsBeforeRequest() async {
         let transport = session { _ in
             Issue.record("A missing OpenAI key must not send a request")
