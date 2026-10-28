@@ -83,12 +83,12 @@ struct SettingsView: View {
                 Section {
                     Picker("Text cleanup", selection: $config.cleanupMode) {
                         Text("Fast with spoken edits").tag(CleanupMode.fast)
-                        Text("Automatic polish with OpenAI").tag(CleanupMode.smart)
+                        Text("Grammar fix with OpenAI").tag(CleanupMode.smart)
                     }
                 } header: { Text("Writing") } footer: {
                     Text(config.cleanupMode == .fast
                         ? "Removes filler words on your Mac. OpenAI handles spoken corrections and rewrites, including the relevant writing context."
-                        : "Speak naturally. OpenAI removes fillers and tightens your wording. Say ‘make this better’ or ‘make it more casual’ to edit selected text or your last dictation.")
+                        : "Types what you say. OpenAI only fixes grammar, punctuation and fillers, and never answers or rewrites. Say ‘make this better’ to edit selected text or your last dictation.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading).multilineTextAlignment(.leading)
                 }

@@ -31,21 +31,21 @@ import Foundation
     }
 
     @Test func plainDictationGetsPolishedThenInserted() async {
-        let cleaner = FakeCleaner(reply: "Cleaned text.")
+        let cleaner = FakeCleaner(reply: "Hello!")
         let inserter = FakeInserter()
         let pipe = SpeechPipeline(
             snippets: SnippetStore(snippets: []),
             transcriber: FakeTranscriber("um hello"),
             cleaner: cleaner, inserter: inserter, onStatus: { _ in })
         await pipe.process(samples: [0.0])
-        #expect(inserter.inserted == ["Cleaned text."])
+        #expect(inserter.inserted == ["Hello!"])
         #expect(cleaner.lastMessages.last?.content.contains("um hello") == true)
     }
 
     @Test(arguments: ["Send the project update tomorrow.",
                       "Meet Thursday, no I mean Friday."])
     func savedContextReachesFinalAndSpeculativeDictation(raw: String) async {
-        let cleaner = FakeCleaner(reply: "Edited draft.")
+        let cleaner = FakeCleaner(reply: "Send the project update tomorrow!")
         let inserter = FakeInserter()
         let context = "My project is Example Studio. Keep updates concise."
         let pipe = SpeechPipeline(
@@ -56,7 +56,7 @@ import Foundation
         await pipe.process(transcript: raw)
         #expect(cleaner.lastMessages.first?.content.contains(context) == true)
         #expect(preview == cleaner.lastMessages)
-        #expect(inserter.inserted == ["Edited draft."])
+        #expect(inserter.inserted == ["Send the project update tomorrow!"])
     }
 
     @Test func savedContextReachesAISnippetsButNotVerbatimSnippets() async {
@@ -245,5 +245,16 @@ import Foundation
         await pipe.process(samples: [0.0])
         #expect(inserter.inserted.isEmpty)
         #expect(statuses.contains { if case .error = $0 { return true } else { return false } })
+    }
+
+    @Test func answerInsteadOfProofreadFallsBackToSpokenWords() async {
+        let cleaner = FakeCleaner(reply: "Restart the server, then clear the cache and check the logs for errors.")
+        let inserter = FakeInserter()
+        let pipe = SpeechPipeline(
+            snippets: SnippetStore(snippets: []),
+            transcriber: FakeTranscriber("how do i fix the login bug"),
+            cleaner: cleaner, inserter: inserter, onStatus: { _ in })
+        await pipe.process(samples: [0.0])
+        #expect(inserter.inserted == ["How do I fix the login bug?"])
     }
 }

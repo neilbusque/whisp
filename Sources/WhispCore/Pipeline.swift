@@ -225,16 +225,21 @@ public final class SpeechPipeline: @unchecked Sendable {
         case .fast: return TranscriptCleaner.offlineClean(text)
         case .smart:
             onStatus(.polishing)
-            return try await cleanOrFallback(
+            let fallback = TranscriptCleaner.offlineClean(text)
+            let polished = try await cleanOrFallback(
                 TranscriptCleaner.polishPrompt(raw: text, vocabulary: vocabulary, profileContext: profileContext),
-                fallback: TranscriptCleaner.offlineClean(text))
+                fallback: fallback)
+            // Type what was said, never an answer or a rewrite of it.
+            return TranscriptCleaner.isFaithfulProofread(raw: text, output: polished) ? polished : fallback
         }
     }
 
     private func cleanOrFallback(_ messages: [ChatMessage], fallback: String) async throws -> String {
         do {
             let result = try await cleaner.complete(messages)
-            let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmed = result
+                .replacingOccurrences(of: #"</?dictation>"#, with: "", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? fallback : trimmed
         } catch {
             try Task.checkCancellation()

@@ -33,7 +33,10 @@ import Testing
         }
         private func result(for call: Int) -> Result<String, Error> {
             if failFirst && call == 1 { return .failure(RealtimeTranscriptionProtocol.Failure("test failure")) }
-            return .success("Polished: " + (calls[call - 1].last?.content ?? ""))
+            let content = (calls[call - 1].last?.content ?? "")
+                .replacingOccurrences(of: #"</?dictation>"#, with: "", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return .success("Polished: " + content)
         }
     }
     func prompt(_ text: String) -> [ChatMessage] { TranscriptCleaner.polishPrompt(raw: text) }
