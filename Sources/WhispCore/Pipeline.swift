@@ -35,6 +35,7 @@ public final class SpeechPipeline: @unchecked Sendable {
     private let hasWritingIssues: @Sendable (String) async -> Bool
     private let processLock = NSLock()
     private var processing = false
+    private var proofreadDeadline: ContinuousClock.Instant?
 
     public init(snippets: SnippetStore, transcriber: Transcribing, cleaner: Cleaning,
                 inserter: TextInserting, selectionReader: SelectedTextReading? = nil,
@@ -66,6 +67,14 @@ public final class SpeechPipeline: @unchecked Sendable {
 
     /// Reuse corrections, commands, snippets and safe insertion after live recognition.
     public func process(transcript: String) async {
+        await process(samples: [], transcript: transcript)
+    }
+
+    /// Paste by `deadline` even if the AI proofread is still running: the
+    /// locally cleaned text is used instead of waiting.
+    public func process(transcript: String, proofreadBy deadline: ContinuousClock.Instant) async {
+        proofreadDeadline = deadline
+        defer { proofreadDeadline = nil }
         await process(samples: [], transcript: transcript)
     }
 
@@ -228,25 +237,26 @@ public final class SpeechPipeline: @unchecked Sendable {
         case .fast: return TranscriptCleaner.offlineClean(text)
         case .smart:
             let fallback = TranscriptCleaner.offlineClean(text)
-            // A clean transcript pastes right away instead of waiting on OpenAI.
+            // Fillers, stutters and "i" are fixed on this Mac. Only spelling or
+            // grammar the Mac flags waits on OpenAI.
             guard await needsProofread(text) else { return fallback }
             onStatus(.polishing)
             let polished = try await cleanOrFallback(
                 TranscriptCleaner.polishPrompt(raw: text, vocabulary: vocabulary, profileContext: profileContext),
-                fallback: fallback)
+                fallback: fallback, deadline: proofreadDeadline)
             // Type what was said, never an answer or a rewrite of it.
             return TranscriptCleaner.isFaithfulProofread(raw: text, output: polished) ? polished : fallback
         }
     }
 
     private func needsProofread(_ text: String) async -> Bool {
-        if TranscriptCleaner.hasLocalProofreadMarkers(text) { return true }
-        return await hasWritingIssues(text)
+        await hasWritingIssues(TranscriptCleaner.offlineClean(text))
     }
 
-    private func cleanOrFallback(_ messages: [ChatMessage], fallback: String) async throws -> String {
+    private func cleanOrFallback(_ messages: [ChatMessage], fallback: String,
+                                 deadline: ContinuousClock.Instant? = nil) async throws -> String {
         do {
-            let result = try await cleaner.complete(messages)
+            let result = try await completeBy(deadline, messages)
             let trimmed = result
                 .replacingOccurrences(of: #"</?dictation>"#, with: "", options: .regularExpression)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -254,6 +264,21 @@ public final class SpeechPipeline: @unchecked Sendable {
         } catch {
             try Task.checkCancellation()
             return fallback
+        }
+    }
+
+    private struct ProofreadTimedOut: Error {}
+
+    private func completeBy(_ deadline: ContinuousClock.Instant?, _ messages: [ChatMessage]) async throws -> String {
+        guard let deadline else { return try await cleaner.complete(messages) }
+        return try await withThrowingTaskGroup(of: String.self) { group in
+            group.addTask { [cleaner] in try await cleaner.complete(messages) }
+            group.addTask {
+                try await Task.sleep(until: deadline, clock: .continuous)
+                throw ProofreadTimedOut()
+            }
+            defer { group.cancelAll() }
+            return try await group.next() ?? ""
         }
     }
 

@@ -243,10 +243,10 @@ import Testing
             output: "Could you send the draft by Friday?"))
     }
 
-    @Test func localMarkersFindFillersStuttersAndLowercaseI() {
-        #expect(TranscriptCleaner.hasLocalProofreadMarkers("Um, send it."))
-        #expect(TranscriptCleaner.hasLocalProofreadMarkers("I think the the plan works."))
-        #expect(TranscriptCleaner.hasLocalProofreadMarkers("Then i left."))
-        #expect(!TranscriptCleaner.hasLocalProofreadMarkers("I'm in. Can you send the umbrella photo?"))
+    @Test func offlineCleanFixesStuttersFillersAndLowercaseI() {
+        #expect(TranscriptCleaner.offlineClean("um so i think the the plan works")
+                == "So I think the plan works.")
+        #expect(TranscriptCleaner.offlineClean("I, I want it") == "I want it.")
+        #expect(TranscriptCleaner.offlineClean("how do i fix it") == "How do I fix it?")
     }
 }

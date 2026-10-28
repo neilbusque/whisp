@@ -34,6 +34,16 @@ final class OpenAICleaner: Cleaning {
         } else { self.session = Self.boundedSession }
     }
 
+    /// Opens the HTTPS connection while the user is still speaking, so the
+    /// proofread after release does not pay for DNS and TLS setup.
+    static func prewarm(apiKey: String) {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/models/\(WhispConfig.defaultTextModel)")!)
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        boundedSession.dataTask(with: request).resume()
+    }
+
     private struct Request: Encodable {
         let model: String
         let messages: [ChatMessage]

@@ -272,15 +272,43 @@ import Foundation
         #expect(await pipe.previewMessages(for: "Can you send me the draft by Friday?") == nil)
     }
 
-    @Test func fillerOrSpellingIssueStillGetsProofread() async {
-        for (raw, issues) in [("Um, so I think the the plan works.", false), ("I want to make thes faster.", true)] {
-            let cleaner = FakeCleaner(reply: "I want to make these faster.")
-            let pipe = SpeechPipeline(
-                snippets: SnippetStore(snippets: []), transcriber: FakeTranscriber(raw),
-                cleaner: cleaner, inserter: FakeInserter(), hasWritingIssues: { _ in issues },
-                onStatus: { _ in })
-            await pipe.process(samples: [0.0])
-            #expect(!cleaner.lastMessages.isEmpty, "\(raw) should be proofread")
+    @Test func fillersAreFixedLocallyAndSpellingGoesToOpenAI() async {
+        let local = FakeCleaner(reply: "unused")
+        let localInserter = FakeInserter()
+        await SpeechPipeline(
+            snippets: SnippetStore(snippets: []),
+            transcriber: FakeTranscriber("Um, so I think the the plan works."),
+            cleaner: local, inserter: localInserter, hasWritingIssues: { _ in false },
+            onStatus: { _ in }).process(samples: [0.0])
+        #expect(local.lastMessages.isEmpty)
+        #expect(localInserter.inserted == ["So I think the plan works."])
+
+        let ai = FakeCleaner(reply: "I want to make these faster.")
+        let aiInserter = FakeInserter()
+        await SpeechPipeline(
+            snippets: SnippetStore(snippets: []),
+            transcriber: FakeTranscriber("I want to make thes faster."),
+            cleaner: ai, inserter: aiInserter, hasWritingIssues: { $0.contains("thes") },
+            onStatus: { _ in }).process(samples: [0.0])
+        #expect(aiInserter.inserted == ["I want to make these faster."])
+    }
+
+    @Test func slowProofreadPastesLocalTextByTheDeadline() async {
+        final class SlowCleaner: Cleaning, @unchecked Sendable {
+            func complete(_ messages: [ChatMessage]) async throws -> String {
+                try await Task.sleep(for: .seconds(5))
+                return "I want to make these faster."
+            }
         }
+        let inserter = FakeInserter()
+        let pipe = SpeechPipeline(
+            snippets: SnippetStore(snippets: []), transcriber: FakeTranscriber(""),
+            cleaner: SlowCleaner(), inserter: inserter, hasWritingIssues: { _ in true },
+            onStatus: { _ in })
+        let started = ContinuousClock.now
+        await pipe.process(transcript: "i want to make thes faster",
+                           proofreadBy: .now + .milliseconds(200))
+        #expect(started.duration(to: .now) < .seconds(1))
+        #expect(inserter.inserted == ["I want to make thes faster."])
     }
 }

@@ -333,6 +333,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             learning.error = "Enable Whisp under System Settings → Privacy & Security → Microphone."
             return
         }
+        if config.cleanupMode == .smart { OpenAICleaner.prewarm(apiKey: config.openaiKey) }
         let speculationID = await speculativeCleaner?.begin()
         activeSpeculationID = speculationID
         guard fnHeld, !recording, !processing else {
@@ -454,7 +455,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         let raw = try await realtime.finish(timeout: 8)
                         try Task.checkCancellation()
                         Diag.log("live transcript ready after release in \(Date().timeIntervalSince(processingStarted))s")
-                        await pipeline?.process(transcript: raw)
+                        // Keep release-to-paste under a second; a late proofread
+                        // gives way to the locally cleaned text.
+                        let deadline = ContinuousClock.now + .milliseconds(
+                            max(150, Int((0.95 - Date().timeIntervalSince(processingStarted)) * 1000)))
+                        await pipeline?.process(transcript: raw, proofreadBy: deadline)
                     } catch {
                         try Task.checkCancellation()
                         Diag.log("OpenAI transcription unavailable; using local recovery: \(error.localizedDescription)")
