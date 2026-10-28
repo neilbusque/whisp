@@ -32,6 +32,7 @@ public final class SpeechPipeline: @unchecked Sendable {
     private let onStatus: (PipelineStatus) -> Void
     private let corrections: @Sendable () async -> [CorrectionRule]
     private let onResult: @Sendable (DictationResult) async -> Void
+    private let hasWritingIssues: @Sendable (String) async -> Bool
     private let processLock = NSLock()
     private var processing = false
 
@@ -42,6 +43,7 @@ public final class SpeechPipeline: @unchecked Sendable {
                 cleanupMode: CleanupMode = .smart,
                 corrections: @escaping @Sendable () async -> [CorrectionRule] = { [] },
                 onResult: @escaping @Sendable (DictationResult) async -> Void = { _ in },
+                hasWritingIssues: @escaping @Sendable (String) async -> Bool = { _ in true },
                 onStatus: @escaping (PipelineStatus) -> Void) {
         self.snippets = snippets
         self.transcriber = transcriber
@@ -55,6 +57,7 @@ public final class SpeechPipeline: @unchecked Sendable {
         self.onStatus = onStatus
         self.corrections = corrections
         self.onResult = onResult
+        self.hasWritingIssues = hasWritingIssues
     }
 
     public func process(samples: [Float]) async {
@@ -88,8 +91,8 @@ public final class SpeechPipeline: @unchecked Sendable {
             if case .interpret(let draft) = SpokenEdit.parse(text) {
                 return TranscriptCleaner.dictationPrompt(raw: draft, vocabulary: effectiveVocabulary, profileContext: profileContext)
             }
-            return cleanupMode == .smart
-                ? TranscriptCleaner.polishPrompt(raw: text, vocabulary: effectiveVocabulary, profileContext: profileContext) : nil
+            guard cleanupMode == .smart, await needsProofread(text) else { return nil }
+            return TranscriptCleaner.polishPrompt(raw: text, vocabulary: effectiveVocabulary, profileContext: profileContext)
         }
     }
 
@@ -224,14 +227,21 @@ public final class SpeechPipeline: @unchecked Sendable {
         switch cleanupMode {
         case .fast: return TranscriptCleaner.offlineClean(text)
         case .smart:
-            onStatus(.polishing)
             let fallback = TranscriptCleaner.offlineClean(text)
+            // A clean transcript pastes right away instead of waiting on OpenAI.
+            guard await needsProofread(text) else { return fallback }
+            onStatus(.polishing)
             let polished = try await cleanOrFallback(
                 TranscriptCleaner.polishPrompt(raw: text, vocabulary: vocabulary, profileContext: profileContext),
                 fallback: fallback)
             // Type what was said, never an answer or a rewrite of it.
             return TranscriptCleaner.isFaithfulProofread(raw: text, output: polished) ? polished : fallback
         }
+    }
+
+    private func needsProofread(_ text: String) async -> Bool {
+        if TranscriptCleaner.hasLocalProofreadMarkers(text) { return true }
+        return await hasWritingIssues(text)
     }
 
     private func cleanOrFallback(_ messages: [ChatMessage], fallback: String) async throws -> String {

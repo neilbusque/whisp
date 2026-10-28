@@ -242,4 +242,11 @@ import Testing
             raw: "so basically i just wanted to ask if you could like send the draft by friday please",
             output: "Could you send the draft by Friday?"))
     }
+
+    @Test func localMarkersFindFillersStuttersAndLowercaseI() {
+        #expect(TranscriptCleaner.hasLocalProofreadMarkers("Um, send it."))
+        #expect(TranscriptCleaner.hasLocalProofreadMarkers("I think the the plan works."))
+        #expect(TranscriptCleaner.hasLocalProofreadMarkers("Then i left."))
+        #expect(!TranscriptCleaner.hasLocalProofreadMarkers("I'm in. Can you send the umbrella photo?"))
+    }
 }

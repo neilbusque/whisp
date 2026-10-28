@@ -12,7 +12,7 @@ import Foundation
         #expect(c.openaiKey.isEmpty)
         #expect(c.transcriptionMode == .local)
         #expect(c.transcriptionModel == "gpt-live-transcribe")
-        #expect(c.textModel == "gpt-4.1-nano")
+        #expect(c.textModel == "gpt-5.4-nano")
     }
 
     @Test func roundTripsThroughJSON() throws {
@@ -104,5 +104,11 @@ import Foundation
                                    silenceRMSThreshold: 0.1)
         let decoded = try WhispConfig.load(from: original.encoded())
         #expect(decoded == original)
+    }
+
+    @Test func retiredTextModelMovesToTheFastDefault() throws {
+        let json = #"{"openaiKey":"k","textModel":"gpt-4.1-mini"}"#
+        let config = try JSONDecoder().decode(WhispConfig.self, from: Data(json.utf8))
+        #expect(config.textModel == WhispConfig.defaultTextModel)
     }
 }

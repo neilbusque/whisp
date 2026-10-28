@@ -30,7 +30,11 @@ enum OpenAIBenchmark {
             onReuse: { sink.reused() })
         let id = await writer.begin()
         let pipeline = SpeechPipeline(snippets: .init(snippets: []), transcriber: NoLocalRecognition(),
-            cleaner: writer, inserter: sink, cleanupMode: .smart, onStatus: { _ in })
+            cleaner: writer, inserter: sink, cleanupMode: .smart,
+            hasWritingIssues: { text in
+                await MainActor.run { WritingCheck.hasIssues(text, knownTerms: Paths.loadVocabulary()) }
+            },
+            onStatus: { _ in })
         let speculate = !CommandLine.arguments.contains("--no-speculation")
         let live = OpenAIRealtimeTranscriber(apiKey: config.openaiKey, model: config.transcriptionModel,
             onPartial: { text in

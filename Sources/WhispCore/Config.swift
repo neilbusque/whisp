@@ -16,7 +16,9 @@ public enum TranscriptionMode: String, Codable, CaseIterable, Sendable {
 
 public struct WhispConfig: Codable, Equatable, Sendable {
     public static let defaultTranscriptionModel = "gpt-live-transcribe"
-    public static let defaultTextModel = "gpt-4.1-nano"
+    public static let defaultTextModel = "gpt-5.4-nano"
+    /// OpenAI no longer serves these, or they are slower than the default for proofreading.
+    static let retiredTextModels: Set<String> = ["gpt-4.1-nano", "gpt-4.1-mini"]
 
     /// Retained only to load older config files. Never used for OpenAI requests.
     public var deepseekKey: String
@@ -82,6 +84,7 @@ public struct WhispConfig: Codable, Equatable, Sendable {
         transcriptionMode = try c.decodeIfPresent(TranscriptionMode.self, forKey: .transcriptionMode) ?? .local
         transcriptionModel = try c.decodeIfPresent(String.self, forKey: .transcriptionModel) ?? d.transcriptionModel
         textModel = try c.decodeIfPresent(String.self, forKey: .textModel) ?? d.textModel
+        if Self.retiredTextModels.contains(textModel) { textModel = d.textModel }
         hotkey = try c.decodeIfPresent(String.self, forKey: .hotkey) ?? d.hotkey
         whisperModel = try c.decodeIfPresent(String.self, forKey: .whisperModel) ?? d.whisperModel
         snippetsPath = try c.decodeIfPresent(String.self, forKey: .snippetsPath) ?? d.snippetsPath

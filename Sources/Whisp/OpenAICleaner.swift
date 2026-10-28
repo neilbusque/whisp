@@ -41,6 +41,8 @@ final class OpenAICleaner: Cleaning {
         let temperature: Double
         let max_completion_tokens: Int
         let store: Bool
+        /// GPT-5 models think before answering unless told not to; proofreading needs none.
+        let reasoning_effort: String?
     }
 
     private struct Response: Decodable {
@@ -62,7 +64,8 @@ final class OpenAICleaner: Cleaning {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONEncoder().encode(
             Request(model: model, messages: messages, stream: false, temperature: 0,
-                    max_completion_tokens: outputTokenBudget(for: messages), store: false))
+                    max_completion_tokens: outputTokenBudget(for: messages), store: false,
+                    reasoning_effort: model.hasPrefix("gpt-5") ? "none" : nil))
         // Ordinary dictation has a local fallback; required rewrites report the
         // failure without pasting partial text. Avoid retries on the typing path.
         request.timeoutInterval = noteOrganization ? 30 : 5

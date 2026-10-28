@@ -150,6 +150,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 cleanupMode: config.cleanupMode,
                 corrections: { [weak self] in await self?.learning.data.rules ?? [] },
                 onResult: { [weak self] result in await self?.remember(result) },
+                hasWritingIssues: { [weak self] text in
+                    await MainActor.run {
+                        let terms = (self?.learning.data.rules.filter(\.enabled).map(\.intended) ?? []) + vocab
+                        return WritingCheck.hasIssues(text, knownTerms: terms)
+                    }
+                },
                 // `onStatus` runs inside the pipeline's async `process(...)`, which
                 // is NOT guaranteed to be on the main actor. Hop before touching
                 // the @MainActor HUD / status item.

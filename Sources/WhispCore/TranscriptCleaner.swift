@@ -58,6 +58,18 @@ public enum TranscriptCleaner {
         ]
     }
 
+    /// Signs a transcript needs more than local cleanup: hesitation sounds,
+    /// stuttered words, or a lowercase "i". Spelling and grammar are checked
+    /// by the app, which has the system spell checker.
+    public static func hasLocalProofreadMarkers(_ text: String) -> Bool {
+        let patterns = [
+            #"(?i)(?<![\p{L}\p{N}_-])(?:um+|uh+|erm+)(?![\p{L}\p{N}_-])"#,
+            #"(?i)\b(\p{L}+)[\s,]+\1\b"#,
+            #"(?<![\p{L}\p{N}_'’-])i(?![\p{L}\p{N}_-])"#,
+        ]
+        return patterns.contains { text.range(of: $0, options: .regularExpression) != nil }
+    }
+
     /// Guard against the model answering, rewriting, or expanding a dictation
     /// instead of proofreading it. A proofread keeps nearly every word the
     /// speaker said and adds almost none of its own.

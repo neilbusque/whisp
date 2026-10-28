@@ -257,4 +257,30 @@ import Foundation
         await pipe.process(samples: [0.0])
         #expect(inserter.inserted == ["How do I fix the login bug?"])
     }
+
+    @Test func cleanTranscriptPastesWithoutWaitingForOpenAI() async {
+        let cleaner = FakeCleaner(reply: "Should not be used.")
+        let inserter = FakeInserter()
+        let pipe = SpeechPipeline(
+            snippets: SnippetStore(snippets: []),
+            transcriber: FakeTranscriber("Can you send me the draft by Friday?"),
+            cleaner: cleaner, inserter: inserter, hasWritingIssues: { _ in false },
+            onStatus: { _ in })
+        await pipe.process(samples: [0.0])
+        #expect(inserter.inserted == ["Can you send me the draft by Friday?"])
+        #expect(cleaner.lastMessages.isEmpty)
+        #expect(await pipe.previewMessages(for: "Can you send me the draft by Friday?") == nil)
+    }
+
+    @Test func fillerOrSpellingIssueStillGetsProofread() async {
+        for (raw, issues) in [("Um, so I think the the plan works.", false), ("I want to make thes faster.", true)] {
+            let cleaner = FakeCleaner(reply: "I want to make these faster.")
+            let pipe = SpeechPipeline(
+                snippets: SnippetStore(snippets: []), transcriber: FakeTranscriber(raw),
+                cleaner: cleaner, inserter: FakeInserter(), hasWritingIssues: { _ in issues },
+                onStatus: { _ in })
+            await pipe.process(samples: [0.0])
+            #expect(!cleaner.lastMessages.isEmpty, "\(raw) should be proofread")
+        }
+    }
 }
