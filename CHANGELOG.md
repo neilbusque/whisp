@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.2 · 2026-11-01
+
+- Type what was said: cleanup only fixes grammar, punctuation and fillers, keeps your wording, and never answers questions in the dictation.
+- Paste clean dictation without waiting on OpenAI, so most dictations land in under a second after releasing Fn.
+
 ## 0.7.1 · 2026-10-24
 
 - Keep note titles fully visible when reading long pages in compact windows.
